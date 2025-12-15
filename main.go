@@ -1,20 +1,30 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
-	"time"
 )
 
-func greet(w http.ResponseWriter, r *http.Request) {
-	if _, err := fmt.Fprintf(w, "Hello World! %s", time.Now()); err != nil {
+// Use httputil.ReverseProxy to forward requests from client to process / server
+
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+	// Echo back request info
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]any{
+		"method":  r.Method,
+		"path":    r.URL.Path,
+		"headers": r.Header,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		return
 	}
 }
 
 func main() {
-	http.HandleFunc("/", greet)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	http.HandleFunc("/", handleRequest)
+	if err := http.ListenAndServe(":9000", nil); err != nil {
 		return
 	}
 }
