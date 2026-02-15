@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -21,73 +21,97 @@ const (
 	TokensPerSecond float64 = 1
 )
 
+type BucketStore interface {
+	Get(key string) (*bucket, error)
+	Set(key string, b *bucket, ttl time.Duration) error
+}
+
+type RedisBucketStore struct {
+	client *redis.Client
+}
+
+func (r *RedisBucketStore) Get(key string) (*bucket, error) {
+	val, err := r.client.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, nil // Not found
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var b bucket
+	if err := json.Unmarshal(val, &b); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+func (r *RedisBucketStore) Set(key string, b *bucket, ttl time.Duration) error {
+	data, err := json.Marshal(b)
+	if err != nil {
+		return err
+	}
+	return r.client.Set(ctx, key, data, ttl).Err()
+}
+
 type bucket struct {
 	Tokens    float64   `json:"tokens"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
+type InMemroyBucketStore struct {
+	data map[string]*bucket
+	mu   sync.Mutex
+}
+
+func (m *InMemroyBucketStore) Get(key string) (*bucket, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	b, ok := m.data[key]
+	if !ok {
+		return nil, nil
+	}
+	return b, nil
+}
+
+func (m *InMemroyBucketStore) Set(key string, b *bucket, ttl time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.data[key] = b
+	return nil
+}
+
 type limiter struct {
-	client   *redis.Client
-	buckets  map[string]*bucket // TODO: Add bucket cleanup (TTL, periodic cleanup, LRU)
+	store    BucketStore
 	capacity float64
 	rate     float64
 }
 
-func NewLimiter(redisClient *redis.Client, maxCapacity float64, tokensPerSecond float64) *limiter {
-	return &limiter{client: redisClient, buckets: make(map[string]*bucket), capacity: maxCapacity, rate: tokensPerSecond}
-}
-
-func (l *limiter) GetOrCreateBucket(key string, now time.Time) (*bucket, error) {
-	val, err := l.client.Get(ctx, key).Bytes()
-	if err == nil {
-		var b bucket
-		if err := json.Unmarshal(val, &b); err != nil {
-			return nil, err
-		}
-		return &b, nil
-	}
-
-	if err != redis.Nil {
-		return nil, err
-	}
-
-	// Not found. Create new
-	newBucket := bucket{
-		Tokens:    l.capacity,
-		Timestamp: now,
-	}
-
-	data, _ := json.Marshal(newBucket)
-
-	err = l.client.Set(ctx, key, data, time.Hour).Err()
-	if err != nil {
-		return nil, err
-	}
-
-	return &newBucket, nil
+func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64) *limiter {
+	return &limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
 }
 
 func (l *limiter) Allow(clientID string, now time.Time) bool {
 	key := "client:" + clientID
-	userBucket, err := l.GetOrCreateBucket(key, now)
+
+	// Get from store
+	userBucket, err := l.store.Get(key)
 	if err != nil {
 		return false
 	}
 
-	defer func() {
-		data, err := json.Marshal(userBucket)
-		if err != nil {
-			return
+	// Create if it doesnt exist
+	if userBucket == nil {
+		userBucket = &bucket{
+			Tokens:    l.capacity,
+			Timestamp: now,
 		}
-		_ = l.client.Set(ctx, key, data, time.Hour)
-	}()
+	}
 
 	// Refill
 	elapsed := now.Sub(userBucket.Timestamp).Seconds()
-
-	fmt.Println("elapsed ", elapsed,
-		"tokens ", userBucket.Tokens,
-		"timestamp ", userBucket.Timestamp)
 	userBucket.Tokens = math.Min(l.capacity, userBucket.Tokens+(elapsed*l.rate))
 	userBucket.Timestamp = now
 
@@ -97,6 +121,9 @@ func (l *limiter) Allow(clientID string, now time.Time) bool {
 	} else {
 		return false
 	}
+
+	// Updates timestamp only if consumes token
+	_ = l.store.Set(key, userBucket, time.Hour)
 	return true
 }
 
@@ -115,7 +142,8 @@ func main() {
 	if _, err := client.Ping(ctx).Result(); err != nil {
 		panic(err)
 	}
-	limiter := NewLimiter(client, 10, 1)
+	redisStore := &RedisBucketStore{client: client}
+	limiter := NewLimiter(redisStore, 10, 1)
 
 	// Create a handler that wraps the proxy
 	handler := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
