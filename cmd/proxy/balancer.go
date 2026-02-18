@@ -1,8 +1,7 @@
 package main
 
 import (
-	"net/http/httputil"
-	"net/url"
+	"sync/atomic"
 )
 
 // TODO:
@@ -16,28 +15,16 @@ import (
 // (- Eventually skip dead backends)
 
 type balancer struct {
-	proxies []*httputil.ReverseProxy // List of backend ports
-	next    int                      // current port index
+	backends []string      // List of backend addresses
+	counter  atomic.Uint32 // Thread-safe counter
 }
 
-func NewBalancer(ports []string) *balancer {
-	balancer := &balancer{proxies: make([]*httputil.ReverseProxy, len(ports)), next: 0}
-
-	for _, port := range ports {
-		target := &url.URL{
-			Scheme: "http",
-			Host:   ":" + port,
-		}
-		proxy := httputil.NewSingleHostReverseProxy(target)
-
-		balancer.proxies = append(balancer.proxies, proxy)
-	}
-
-	return balancer
+func NewBalancer(backendAdresses []string) *balancer {
+	return &balancer{backends: backendAdresses}
 }
 
-func (b *balancer) getNextProxy() *httputil.ReverseProxy {
-	proxy := b.proxies[b.next]
-	b.next = (b.next + 1) % len(b.proxies)
-	return proxy
+func (b *balancer) GetNextBackend() string {
+	n := b.counter.Add(1)
+	idx := int(n-1) % len(b.backends)
+	return b.backends[idx]
 }
