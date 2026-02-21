@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"sync"
 	"time"
@@ -105,7 +104,7 @@ func main() {
 
 		// Create a proxy for this specific request
 		target, _ := url.Parse("http://" + backend)
-		proxy := httputil.NewSingleHostReverseProxy(target)
+		proxy := balancer.GetProxy(target)
 
 		// Original proxy's ServeHTTP method
 		proxy.ServeHTTP(rw, req)
