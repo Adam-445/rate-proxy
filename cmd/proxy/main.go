@@ -2,10 +2,9 @@ package main
 
 import (
 	"context"
-	"net"
+	"log/slog"
 	"net/http"
-	"net/url"
-	"time"
+	"os"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -13,45 +12,27 @@ import (
 var ctx = context.Background()
 
 func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
 	client := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "",
 		DB:       0,
 	})
 	if _, err := client.Ping(ctx).Result(); err != nil {
+		logger.Error("failed to connect to redis", "error", err)
 		panic(err)
 	}
-	redisStore := &RedisBucketStore{client: client}
 
-	limiter := NewLimiter(redisStore, 10, 1)
-
+	store := &RedisBucketStore{client: client}
+	limiter := NewLimiter(store, 10, 1)
 	balancer := NewBalancer([]string{"localhost:8081", "localhost:8082", "localhost:8083"})
+	handler := NewProxyHandler(limiter, balancer, logger)
 
-	// Create a handler that wraps the proxy
-	handler := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		host, _, err := net.SplitHostPort(req.RemoteAddr)
-		if err != nil {
-			host = req.RemoteAddr
-		}
-
-		// Rate limiting check
-		if !limiter.Allow(host, time.Now()) {
-			http.Error(rw, "Request limit reached", http.StatusTooManyRequests)
-			return
-		}
-
-		// Get next backend
-		backend := balancer.GetNextBackend()
-
-		// Create a proxy for this specific request
-		target, _ := url.Parse("http://" + backend)
-		proxy := balancer.GetProxy(target)
-
-		// Original proxy's ServeHTTP method
-		proxy.ServeHTTP(rw, req)
-	})
+	logger.Info("proxy listening", "addr", "localhost:8080")
 
 	if err := http.ListenAndServe("localhost:8080", handler); err != nil {
-		return
+		logger.Error("server error", "error", err)
+		os.Exit(1)
 	}
 }

@@ -5,17 +5,17 @@ import (
 	"time"
 )
 
-type limiter struct {
+type Limiter struct {
 	store    BucketStore
 	capacity float64
 	rate     float64
 }
 
-func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64) *limiter {
-	return &limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
+func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64) *Limiter {
+	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
 }
 
-func (l *limiter) Allow(clientID string, now time.Time) bool {
+func (l *Limiter) Allow(clientID string, now time.Time) bool {
 	key := "client:" + clientID
 
 	// Get from store
