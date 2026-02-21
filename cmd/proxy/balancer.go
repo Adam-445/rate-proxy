@@ -3,27 +3,25 @@ package main
 import (
 	"net/http/httputil"
 	"net/url"
+	"sync"
 	"sync/atomic"
 )
 
-// TODO:
-// - Given a list of backends, pick the next one.
-
-// A balancer needs:
-// - A list of backends
-// - Which one to pick next
-// A balancer:
-// - Returns the next backend
-// (- Eventually skip dead backends)
-
 type Balancer struct {
-	backends []string                          // List of backend addresses
-	counter  atomic.Uint32                     // Thread-safe counter
-	proxies  map[string]*httputil.ReverseProxy // Cached proxies
+	// TODO: skip dead backends / healthchecks
+	backends []string // List of backend addresses
+	// TODO: Consider making balancing algorithms swappable
+	counter atomic.Uint32 // Thread-safe counter
+	// TODO: Replace permanent caching to face changes
+	// (DNS changes, proxy.Transport settings can change)
+	// - TTL
+	// - Periodic refreshes
+	// - Close old connections...
+	proxies sync.Map // Cached proxies
 }
 
 func NewBalancer(backendAdresses []string) *Balancer {
-	return &Balancer{backends: backendAdresses, proxies: make(map[string]*httputil.ReverseProxy)}
+	return &Balancer{backends: backendAdresses}
 }
 
 func (b *Balancer) GetNextBackend() string {
@@ -33,10 +31,14 @@ func (b *Balancer) GetNextBackend() string {
 }
 
 func (b *Balancer) GetProxy(target *url.URL) *httputil.ReverseProxy {
-	proxy, ok := b.proxies[target.Host]
-	if !ok {
-		proxy = httputil.NewSingleHostReverseProxy(target)
-		b.proxies[target.Host] = proxy
+	key := target.String()
+	if val, ok := b.proxies.Load(key); ok {
+		return val.(*httputil.ReverseProxy)
 	}
-	return proxy
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	actual, _ := b.proxies.LoadOrStore(key, proxy)
+
+	return actual.(*httputil.ReverseProxy)
 }
