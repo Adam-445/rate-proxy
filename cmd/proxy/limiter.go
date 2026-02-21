@@ -11,11 +11,6 @@ type limiter struct {
 	rate     float64
 }
 
-type BucketStore interface {
-	Get(key string) (*bucket, error)
-	Set(key string, b *bucket, ttl time.Duration) error
-}
-
 func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64) *limiter {
 	return &limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
 }
