@@ -51,8 +51,7 @@ func (b *Balancer) runHealthcheck(backend *backend) {
 		retries := 0
 		for retries <= maxRetries {
 			_, err := client.Head(backend.address)
-			prev := backend.up.Load()
-			if err != nil && prev {
+			if err != nil {
 				backend.up.Store(false)
 				b.logger.Warn("Server is down", "address", backend.address, "retries", retries)
 				time.Sleep(time.Duration(math.Min(math.Exp(float64(retries)/2), float64(maxRetrySleepDurationSec))) * time.Second)
