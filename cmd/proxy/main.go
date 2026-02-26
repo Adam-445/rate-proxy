@@ -21,7 +21,6 @@ func main() {
 	})
 	if _, err := client.Ping(ctx).Result(); err != nil {
 		logger.Error("failed to connect to redis", "error", err)
-		panic(err)
 	}
 
 	store := &RedisBucketStore{client: client}
