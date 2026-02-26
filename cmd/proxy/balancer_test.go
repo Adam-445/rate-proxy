@@ -8,9 +8,9 @@ import (
 
 func TestBalancer_RoundRobin(t *testing.T) {
 	backends := []string{
-		"localhost:8081",
-		"localhost:8082",
-		"localhost:8083",
+		"http://localhost:8081",
+		"http://localhost:8082",
+		"http://localhost:8083",
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := NewBalancer(backends, logger)
