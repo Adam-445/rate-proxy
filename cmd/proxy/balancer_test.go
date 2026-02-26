@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"io"
+	"log/slog"
+	"testing"
+)
 
 func TestBalancer_RoundRobin(t *testing.T) {
 	backends := []string{
@@ -8,7 +12,8 @@ func TestBalancer_RoundRobin(t *testing.T) {
 		"localhost:8082",
 		"localhost:8083",
 	}
-	b := NewBalancer(backends)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := NewBalancer(backends, logger)
 
 	// Call 9 times, should cycle 3 times
 	for i := range 9 {

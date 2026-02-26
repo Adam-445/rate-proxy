@@ -25,7 +25,7 @@ func main() {
 
 	store := &RedisBucketStore{client: client}
 	limiter := NewLimiter(store, 10, 1)
-	balancer := NewBalancer([]string{"localhost:8081", "localhost:8082", "localhost:8083"})
+	balancer := NewBalancer([]string{"localhost:8081", "localhost:8082", "localhost:8083"}, logger)
 	handler := NewProxyHandler(limiter, balancer, logger)
 
 	logger.Info("proxy listening", "addr", "localhost:8080")

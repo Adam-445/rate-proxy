@@ -37,7 +37,7 @@ func (h *ProxyHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	backend := h.balancer.GetNextBackend()
 	h.logger.Info("proxying request", "client", host, "backend", backend, "path", req.URL.Path)
 
-	target, _ := url.Parse("http://" + backend)
+	target, _ := url.Parse(backend)
 	proxy := h.balancer.GetProxy(target)
 	proxy.ServeHTTP(rw, req)
 }
