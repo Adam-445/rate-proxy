@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-var (
+const (
 	maxRetries                  = 3
 	timeoutSeconds              = 2
 	maxRetrySleepDurationSec    = 10
@@ -74,6 +75,7 @@ func NewBalancer(backendAdresses []string, logger *slog.Logger) *Balancer {
 			addr = "http://" + addr
 		}
 		currBackend := &backend{address: addr}
+		currBackend.up.Store(true)
 		backends[i] = currBackend
 		go b.runHealthcheck(currBackend)
 	}
@@ -81,17 +83,16 @@ func NewBalancer(backendAdresses []string, logger *slog.Logger) *Balancer {
 	return b
 }
 
-func (b *Balancer) GetNextBackend() string {
+func (b *Balancer) GetNextBackend() (string, error) {
 	for attempts := 0; attempts < len(b.backends); attempts++ {
 		n := b.counter.Add(1)
 		idx := int(n-1) % len(b.backends)
 		backend := b.backends[idx]
 		if backend.isUp() {
-			return backend.address
+			return backend.address, nil
 		}
 	}
-	// HACK: should return error
-	return "" // No backends up
+	return "", fmt.Errorf("no backends available") // No backends up
 }
 
 func (b *Balancer) GetProxy(target *url.URL) *httputil.ReverseProxy {

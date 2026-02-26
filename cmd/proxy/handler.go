@@ -34,7 +34,11 @@ func (h *ProxyHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	backend := h.balancer.GetNextBackend()
+	backend, err := h.balancer.GetNextBackend()
+	if err != nil {
+		h.logger.Error("Cannot route request", "error", err)
+		http.Error(rw, "Internal server error", http.StatusInternalServerError)
+	}
 	h.logger.Info("proxying request", "client", host, "backend", backend, "path", req.URL.Path)
 
 	target, _ := url.Parse(backend)

@@ -17,7 +17,7 @@ func TestBalancer_RoundRobin(t *testing.T) {
 
 	// Call 9 times, should cycle 3 times
 	for i := range 9 {
-		got := b.GetNextBackend()
+		got, _ := b.GetNextBackend()
 		want := backends[i%3]
 		if got != want {
 			t.Errorf("request %d: got %s, want %s", i, got, want)
