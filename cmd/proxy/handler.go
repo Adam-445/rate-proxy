@@ -30,7 +30,7 @@ func (h *ProxyHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	if !h.limiter.Allow(host, time.Now()) {
 		h.logger.Warn("rate limit exceeded", "client", host)
-		http.Error(rw, "Request limit reacher", http.StatusTooManyRequests)
+		http.Error(rw, "Request limit reached", http.StatusTooManyRequests)
 		return
 	}
 
