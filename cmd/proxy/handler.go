@@ -4,17 +4,27 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"time"
 )
 
+type RateLimiter interface {
+	Allow(string, time.Time) bool
+}
+
+type BackendBalancer interface {
+	GetNextBackend() (string, error)
+	GetProxy(*url.URL) *httputil.ReverseProxy
+}
+
 type ProxyHandler struct {
-	limiter  *Limiter
-	balancer *Balancer
+	limiter  RateLimiter
+	balancer BackendBalancer
 	logger   *slog.Logger
 }
 
-func NewProxyHandler(l *Limiter, b *Balancer, logger *slog.Logger) *ProxyHandler {
+func NewProxyHandler(l RateLimiter, b BackendBalancer, logger *slog.Logger) *ProxyHandler {
 	return &ProxyHandler{
 		limiter:  l,
 		balancer: b,
@@ -37,7 +47,7 @@ func (h *ProxyHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	backend, err := h.balancer.GetNextBackend()
 	if err != nil {
 		h.logger.Error("Cannot route request", "error", err)
-		http.Error(rw, "Internal server error", http.StatusInternalServerError)
+		http.Error(rw, "Service Unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	h.logger.Info("proxying request", "client", host, "backend", backend, "path", req.URL.Path)
