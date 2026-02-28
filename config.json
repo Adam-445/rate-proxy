@@ -1,4 +1,12 @@
 {
+  "storage": {
+    "type": "redis",
+    "redis": {
+      "address": "localhost:6379",
+      "password": "",
+      "db": 0
+    }
+  },
   "frontend": {
     "port": ":8080",
     "rate_limit": {

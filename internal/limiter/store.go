@@ -28,6 +28,7 @@ func NewRedisBucketStore(client *redis.Client) *RedisBucketStore {
 }
 
 func (r *RedisBucketStore) Get(key string) (*bucket, error) {
+	// TODO: move to accepting context.Context as function parameters instead of calling it on every function call
 	val, err := r.client.Get(context.Background(), key).Bytes()
 	if err == redis.Nil {
 		return nil, nil // Not found

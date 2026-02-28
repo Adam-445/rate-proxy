@@ -26,17 +26,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	client := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-	if _, err := client.Ping(context.Background()).Result(); err != nil {
-		logger.Error("failed to connect to redis", "error", err)
-		os.Exit(1)
+	var store limiter.BucketStore
+	switch cfg.Storage.Type {
+	case "redis":
+		client := redis.NewClient(&redis.Options{
+			Addr:     cfg.Storage.Redis.Address,
+			Password: cfg.Storage.Redis.Password,
+			DB:       cfg.Storage.Redis.DB,
+		})
+		if _, err := client.Ping(context.Background()).Result(); err != nil {
+			logger.Error("failed to connect to redis", "error", err)
+			os.Exit(1)
+		}
+		store = limiter.NewRedisBucketStore(client)
+	case "memory":
+		store = limiter.NewInMemoryBucketStore()
 	}
-
-	store := limiter.NewRedisBucketStore(client)
 	l := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate))
 
 	addrs := make([]string, len(cfg.Backend.Servers))

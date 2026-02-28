@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Frontend Frontend `json:"frontend"`
 	Backend  Backend  `json:"backend"`
+	Storage  Storage  `json:"storage"`
 }
 
 type Frontend struct {
@@ -36,6 +37,17 @@ type HealthCheck struct {
 
 type Server struct {
 	Address string `json:"address"`
+}
+
+type Storage struct {
+	Type  string `json:"type"`
+	Redis Redis  `json:"redis"`
+}
+
+type Redis struct {
+	Address  string `json:"address"`
+	Password string `json:"password"`
+	DB       int    `json:"db"`
 }
 
 func LoadConfig(path string) (config *Config, err error) {
@@ -71,6 +83,14 @@ func (c *Config) applyDefaults() {
 	if c.Backend.Algorithm == "" {
 		c.Backend.Algorithm = "round-robin"
 	}
+	if c.Storage.Type == "" {
+		c.Backend.Algorithm = "memory"
+	}
+	if c.Storage.Type == "redis" {
+		if c.Storage.Redis.Address == "" {
+			c.Storage.Redis.Address = "localhost:6379"
+		}
+	}
 	if c.Backend.HealthCheck.IntervalSeconds == 0 {
 		c.Backend.HealthCheck.IntervalSeconds = 5
 	}
@@ -86,6 +106,11 @@ func (c *Config) validate() error {
 	if len(c.Backend.Servers) == 0 {
 		return fmt.Errorf("backend.servers cannot be empty")
 	}
+	for _, svr := range c.Backend.Servers {
+		if svr.Address == "" {
+			return fmt.Errorf("no backend.servers.*.address can be empty")
+		}
+	}
 	if c.Frontend.Port == "" {
 		return fmt.Errorf("frontend.port cannot be empty")
 	}
@@ -98,6 +123,10 @@ func (c *Config) validate() error {
 	validAlgorithms := map[string]bool{"round-robin": true}
 	if !validAlgorithms[c.Backend.Algorithm] {
 		return fmt.Errorf("unknown algorithm %q", c.Backend.Algorithm)
+	}
+	validStorages := map[string]bool{"redis": true, "memory": true}
+	if !validStorages[c.Storage.Type] {
+		return fmt.Errorf("unknow stroage type %q", c.Storage.Type)
 	}
 	return nil
 }
