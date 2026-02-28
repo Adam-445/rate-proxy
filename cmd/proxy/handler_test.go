@@ -71,6 +71,22 @@ func TestHandler_NormalRequest(t *testing.T) {
 }
 
 func TestHandler_RateLimiting(t *testing.T) {
+	// Request is rate limited -> expect 429
+	limiter := &FakeLimiter{allow: false}
+	balancer := &FakeBalancer{backendAddress: "", error: nil}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewProxyHandler(limiter, balancer, logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("Status code error. got %d, want %d", res.StatusCode, http.StatusTooManyRequests)
+	}
 }
 
 func TestHandler_NoBackendsAvailable(t *testing.T) {
