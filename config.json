@@ -1,0 +1,28 @@
+{
+  "frontend": {
+    "port": ":8080",
+    "rate_limit": {
+      "capacity": 10,
+      "rate": 1
+    }
+  },
+  "backend": {
+    "algorithm": "round-robin",
+    "health_check": {
+      "interval_seconds": 5,
+      "timeout_seconds": 2,
+      "max_retries": 3
+    },
+    "servers": [
+      {
+        "address": "localhost:8081"
+      },
+      {
+        "address": "localhost:8082"
+      },
+      {
+        "address": "localhost:8083"
+      }
+    ]
+  }
+}
