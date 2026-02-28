@@ -1,4 +1,6 @@
-package main
+// Package limiter implements a token bucket rate limiter,
+// supports both in-memory and Redis-backed storage
+package limiter
 
 import (
 	"math"

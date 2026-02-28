@@ -1,6 +1,7 @@
-package main
+package limiter
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -22,8 +23,12 @@ type RedisBucketStore struct {
 	client *redis.Client
 }
 
+func NewRedisBucketStore(client *redis.Client) *RedisBucketStore {
+	return &RedisBucketStore{client: client}
+}
+
 func (r *RedisBucketStore) Get(key string) (*bucket, error) {
-	val, err := r.client.Get(ctx, key).Bytes()
+	val, err := r.client.Get(context.Background(), key).Bytes()
 	if err == redis.Nil {
 		return nil, nil // Not found
 	}
@@ -43,15 +48,19 @@ func (r *RedisBucketStore) Set(key string, b *bucket, ttl time.Duration) error {
 	if err != nil {
 		return err
 	}
-	return r.client.Set(ctx, key, data, ttl).Err()
+	return r.client.Set(context.Background(), key, data, ttl).Err()
 }
 
-type InMemroyBucketStore struct {
+type InMemoryBucketStore struct {
 	data map[string]*bucket
 	mu   sync.Mutex
 }
 
-func (m *InMemroyBucketStore) Get(key string) (*bucket, error) {
+func NewInMemoryBucketStore() *InMemoryBucketStore {
+	return &InMemoryBucketStore{data: make(map[string]*bucket)}
+}
+
+func (m *InMemoryBucketStore) Get(key string) (*bucket, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -62,7 +71,7 @@ func (m *InMemroyBucketStore) Get(key string) (*bucket, error) {
 	return b, nil
 }
 
-func (m *InMemroyBucketStore) Set(key string, b *bucket, ttl time.Duration) error {
+func (m *InMemoryBucketStore) Set(key string, b *bucket, ttl time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

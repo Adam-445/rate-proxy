@@ -1,3 +1,4 @@
+// Package main is the entry point for the reverse proxy server
 package main
 
 import (
@@ -6,10 +7,10 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Adam-445/rate-proxy/internal/balancer"
+	"github.com/Adam-445/rate-proxy/internal/limiter"
 	"github.com/redis/go-redis/v9"
 )
-
-var ctx = context.Background()
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -19,18 +20,19 @@ func main() {
 		Password: "",
 		DB:       0,
 	})
-	if _, err := client.Ping(ctx).Result(); err != nil {
+	if _, err := client.Ping(context.Background()).Result(); err != nil {
 		logger.Error("failed to connect to redis", "error", err)
 		os.Exit(1)
 	}
 
-	store := &RedisBucketStore{client: client}
-	limiter := NewLimiter(store, 10, 1)
-	balancer := NewBalancer([]string{"localhost:8081", "localhost:8082", "localhost:8083"}, logger)
+	store := limiter.NewRedisBucketStore(client)
+	limiter := limiter.NewLimiter(store, 10, 1)
+
+	balancer := balancer.NewBalancer([]string{"localhost:8081", "localhost:8082", "localhost:8083"}, logger)
+
 	handler := NewProxyHandler(limiter, balancer, logger)
 
 	logger.Info("proxy listening", "addr", "localhost:8080")
-
 	if err := http.ListenAndServe("localhost:8080", handler); err != nil {
 		logger.Error("server error", "error", err)
 		os.Exit(1)

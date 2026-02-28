@@ -1,4 +1,4 @@
-package main
+package limiter
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestLimiter_AllowsRequestsUpToCapacity(t *testing.T) {
-	store := &InMemroyBucketStore{data: make(map[string]*bucket)}
+	store := &InMemoryBucketStore{data: make(map[string]*bucket)}
 	limiter := NewLimiter(store, 3, 1)
 	fixedTime := time.Unix(0, 0).UTC()
 
@@ -22,7 +22,7 @@ func TestLimiter_AllowsRequestsUpToCapacity(t *testing.T) {
 }
 
 func TestLimiter_RefillsTokensOverTime(t *testing.T) {
-	store := &InMemroyBucketStore{data: make(map[string]*bucket)}
+	store := &InMemoryBucketStore{data: make(map[string]*bucket)}
 	limiter := NewLimiter(store, 3, 1)
 	fixedTime := time.Unix(0, 0).UTC()
 	requestNumber := 0

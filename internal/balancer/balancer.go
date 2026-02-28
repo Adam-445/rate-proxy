@@ -1,4 +1,6 @@
-package main
+// Package balancer implements load balancing across backend servers
+// includes proxy caching and health checks
+package balancer
 
 import (
 	"fmt"
@@ -43,6 +45,9 @@ type Balancer struct {
 	logger  *slog.Logger
 }
 
+// TODO: Make health checks injectable or configurable
+//   - This makes tests guaranteed and not coincidence.
+//     Because healthchecks spin up as soon as the balancer is created
 func (b *Balancer) runHealthcheck(backend *backend) {
 	client := http.Client{
 		Timeout: time.Duration(timeoutSeconds) * time.Second,
@@ -66,10 +71,10 @@ func (b *Balancer) runHealthcheck(backend *backend) {
 	}
 }
 
-func NewBalancer(backendAdresses []string, logger *slog.Logger) *Balancer {
+func NewBalancer(backendAddresses []string, logger *slog.Logger) *Balancer {
 	b := &Balancer{logger: logger}
-	backends := make([]*backend, len(backendAdresses))
-	for i, addr := range backendAdresses {
+	backends := make([]*backend, len(backendAddresses))
+	for i, addr := range backendAddresses {
 		// Add scheme if missing
 		if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
 			addr = "http://" + addr
