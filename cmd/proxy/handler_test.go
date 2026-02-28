@@ -59,7 +59,7 @@ func TestHandler_NormalRequest(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		t.Errorf("expected error to be nil. got %v", err)
+		t.Fatalf("expected error to be nil. got %v", err)
 	}
 
 	if res.StatusCode != http.StatusOK {
