@@ -15,12 +15,11 @@ import (
 	"time"
 )
 
-const (
-	maxRetries                  = 3
-	timeoutSeconds              = 2
-	maxRetrySleepDurationSec    = 10
-	healthcheckSleepDurationSec = 5
-)
+type HealthCheckConfig struct {
+	IntervalSeconds int
+	TimeoutSeconds  int
+	MaxRetries      int
+}
 
 type backend struct {
 	address string
@@ -42,6 +41,7 @@ type Balancer struct {
 	// - Periodic refreshes
 	// - Close old connections...
 	proxies sync.Map // Cached proxies
+	hc      HealthCheckConfig
 	logger  *slog.Logger
 }
 
@@ -50,31 +50,34 @@ type Balancer struct {
 //     Because healthchecks spin up as soon as the balancer is created
 func (b *Balancer) runHealthcheck(backend *backend) {
 	client := http.Client{
-		Timeout: time.Duration(timeoutSeconds) * time.Second,
+		Timeout: time.Duration(b.hc.TimeoutSeconds) * time.Second,
 	}
+
+	maxRetrySleep := 10.0
 
 	for {
 		retries := 0
-		for retries <= maxRetries {
+		for retries <= b.hc.MaxRetries {
 			_, err := client.Head(backend.address)
 			if err != nil {
 				backend.up.Store(false)
 				b.logger.Warn("Server is down", "address", backend.address, "retries", retries)
-				time.Sleep(time.Duration(math.Min(math.Exp(float64(retries)/2), float64(maxRetrySleepDurationSec))) * time.Second)
+				sleep := math.Min(math.Exp(float64(retries)/2), maxRetrySleep)
+				time.Sleep(time.Duration(sleep) * time.Second)
 				retries++
 			} else {
 				backend.up.Store(true)
 				break
 			}
 		}
-		time.Sleep(time.Duration(healthcheckSleepDurationSec) * time.Second)
+		time.Sleep(time.Duration(b.hc.IntervalSeconds) * time.Second)
 	}
 }
 
-func NewBalancer(backendAddresses []string, logger *slog.Logger) *Balancer {
-	b := &Balancer{logger: logger}
-	backends := make([]*backend, len(backendAddresses))
-	for i, addr := range backendAddresses {
+func NewBalancer(addresses []string, hc HealthCheckConfig, logger *slog.Logger) *Balancer {
+	b := &Balancer{hc: hc, logger: logger}
+	backends := make([]*backend, len(addresses))
+	for i, addr := range addresses {
 		// Add scheme if missing
 		if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
 			addr = "http://" + addr
@@ -105,10 +108,7 @@ func (b *Balancer) GetProxy(target *url.URL) *httputil.ReverseProxy {
 	if val, ok := b.proxies.Load(key); ok {
 		return val.(*httputil.ReverseProxy)
 	}
-
 	proxy := httputil.NewSingleHostReverseProxy(target)
-
 	actual, _ := b.proxies.LoadOrStore(key, proxy)
-
 	return actual.(*httputil.ReverseProxy)
 }

@@ -37,15 +37,20 @@ func main() {
 	}
 
 	store := limiter.NewRedisBucketStore(client)
-	limiter := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate))
+	l := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate))
 
 	addrs := make([]string, len(cfg.Backend.Servers))
 	for i, s := range cfg.Backend.Servers {
 		addrs[i] = s.Address
 	}
-	balancer := balancer.NewBalancer(addrs, logger)
+	hc := balancer.HealthCheckConfig{
+		IntervalSeconds: cfg.Backend.HealthCheck.IntervalSeconds,
+		TimeoutSeconds:  cfg.Backend.HealthCheck.TimeoutSeconds,
+		MaxRetries:      cfg.Backend.HealthCheck.MaxRetries,
+	}
+	b := balancer.NewBalancer(addrs, hc, logger)
 
-	handler := NewProxyHandler(limiter, balancer, logger)
+	handler := NewProxyHandler(l, b, logger)
 
 	logger.Info("proxy listening", "addr", cfg.Frontend.Port)
 	if err := http.ListenAndServe(cfg.Frontend.Port, handler); err != nil {
