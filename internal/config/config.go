@@ -84,7 +84,7 @@ func (c *Config) applyDefaults() {
 		c.Backend.Algorithm = "round-robin"
 	}
 	if c.Storage.Type == "" {
-		c.Backend.Algorithm = "memory"
+		c.Storage.Type = "memory"
 	}
 	if c.Storage.Type == "redis" {
 		if c.Storage.Redis.Address == "" {
@@ -126,7 +126,7 @@ func (c *Config) validate() error {
 	}
 	validStorages := map[string]bool{"redis": true, "memory": true}
 	if !validStorages[c.Storage.Type] {
-		return fmt.Errorf("unknow stroage type %q", c.Storage.Type)
+		return fmt.Errorf("unknown storage type %q", c.Storage.Type)
 	}
 	return nil
 }
