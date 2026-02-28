@@ -81,11 +81,8 @@ func TestHandler_RateLimiting(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
-	res := recorder.Result()
-	defer func() { _ = res.Body.Close() }()
-
-	if res.StatusCode != http.StatusTooManyRequests {
-		t.Errorf("Status code error. got %d, want %d", res.StatusCode, http.StatusTooManyRequests)
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Errorf("Status code error. got %d, want %d", recorder.Code, http.StatusTooManyRequests)
 	}
 }
 
@@ -100,10 +97,7 @@ func TestHandler_NoBackendsAvailable(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
-	res := recorder.Result()
-	defer func() { _ = res.Body.Close() }()
-
-	if res.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("Status code error. got %d, want %d", res.StatusCode, http.StatusServiceUnavailable)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Errorf("Status code error. got %d, want %d", recorder.Code, http.StatusServiceUnavailable)
 	}
 }
