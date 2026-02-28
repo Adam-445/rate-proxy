@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -73,4 +74,20 @@ func TestHandler_RateLimiting(t *testing.T) {
 }
 
 func TestHandler_NoBackendsAvailable(t *testing.T) {
+	// No backends available -> expect 503
+	limiter := &FakeLimiter{allow: true}
+	balancer := &FakeBalancer{backendAddress: "", error: errors.New("no backends")}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewProxyHandler(limiter, balancer, logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("Status code error. got %d, want %d", res.StatusCode, http.StatusServiceUnavailable)
+	}
 }
