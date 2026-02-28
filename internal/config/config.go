@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -58,5 +59,29 @@ func LoadConfig(path string) (config *Config, err error) {
 		return nil, err
 	}
 
+	if err := config.validate(); err != nil {
+		return nil, err
+	}
+
 	return config, nil
+}
+
+func (c *Config) validate() error {
+	if len(c.Backend.Servers) == 0 {
+		return fmt.Errorf("backend.servers cannot be empty")
+	}
+	if c.Frontend.Port == "" {
+		return fmt.Errorf("frontend.port cannot be empty")
+	}
+	if c.Frontend.RateLimit.Capacity <= 0 {
+		return fmt.Errorf("frontend.rate_limit.capacity must be greater than 0")
+	}
+	if c.Frontend.RateLimit.Rate <= 0 {
+		return fmt.Errorf("frontend.rate_limit.rate must be greater than 0")
+	}
+	validAlgorithms := map[string]bool{"round-robin": true}
+	if !validAlgorithms[c.Backend.Algorithm] {
+		return fmt.Errorf("unknown algorithm %q", c.Backend.Algorithm)
+	}
+	return nil
 }
