@@ -59,11 +59,27 @@ func LoadConfig(path string) (config *Config, err error) {
 		return nil, err
 	}
 
+	config.applyDefaults()
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
 
 	return config, nil
+}
+
+func (c *Config) applyDefaults() {
+	if c.Backend.Algorithm == "" {
+		c.Backend.Algorithm = "round-robin"
+	}
+	if c.Backend.HealthCheck.IntervalSeconds == 0 {
+		c.Backend.HealthCheck.IntervalSeconds = 5
+	}
+	if c.Backend.HealthCheck.TimeoutSeconds == 0 {
+		c.Backend.HealthCheck.TimeoutSeconds = 2
+	}
+	if c.Backend.HealthCheck.MaxRetries == 0 {
+		c.Backend.HealthCheck.MaxRetries = 3
+	}
 }
 
 func (c *Config) validate() error {
