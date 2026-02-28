@@ -3,17 +3,28 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
 
 	"github.com/Adam-445/rate-proxy/internal/balancer"
+	"github.com/Adam-445/rate-proxy/internal/config"
 	"github.com/Adam-445/rate-proxy/internal/limiter"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	configPath := flag.String("config", "config.json", "path to config file")
+	flag.Parse()
+
+	cfg, err := config.LoadConfig(*configPath)
+	if err != nil {
+		logger.Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
 
 	client := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -26,14 +37,18 @@ func main() {
 	}
 
 	store := limiter.NewRedisBucketStore(client)
-	limiter := limiter.NewLimiter(store, 10, 1)
+	limiter := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate))
 
-	balancer := balancer.NewBalancer([]string{"localhost:8081", "localhost:8082", "localhost:8083"}, logger)
+	addrs := make([]string, len(cfg.Backend.Servers))
+	for i, s := range cfg.Backend.Servers {
+		addrs[i] = s.Address
+	}
+	balancer := balancer.NewBalancer(addrs, logger)
 
 	handler := NewProxyHandler(limiter, balancer, logger)
 
-	logger.Info("proxy listening", "addr", "localhost:8080")
-	if err := http.ListenAndServe("localhost:8080", handler); err != nil {
+	logger.Info("proxy listening", "addr", cfg.Frontend.Port)
+	if err := http.ListenAndServe(cfg.Frontend.Port, handler); err != nil {
 		logger.Error("server error", "error", err)
 		os.Exit(1)
 	}
