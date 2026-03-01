@@ -41,6 +41,9 @@ func main() {
 		store = limiter.NewRedisBucketStore(client)
 	case "memory":
 		store = limiter.NewInMemoryBucketStore()
+	default:
+		logger.Error("Unrecognized storage type", "type", cfg.Storage.Type)
+		os.Exit(1)
 	}
 	l := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate))
 
@@ -57,6 +60,10 @@ func main() {
 	switch cfg.Backend.Algorithm {
 	case "round-robin":
 		algorithm = &balancer.RoundRobin{}
+	default:
+		logger.Error("Unrecognized balancing algorithm", "algorithm", cfg.Backend.Algorithm)
+		os.Exit(1)
+
 	}
 	b := balancer.NewBalancer(addrs, hc, algorithm, logger)
 
