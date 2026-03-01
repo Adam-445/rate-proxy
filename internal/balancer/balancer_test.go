@@ -67,30 +67,32 @@ func TestBalancer_DownBackend(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		alg := &fakeAlgorithm{idx: tt.startingIdx}
-		addrs := make([]string, tt.backendCount)
-		for i := range tt.backendCount {
-			addrs[i] = "http://" + strconv.Itoa(i)
-		}
-		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		balancer := NewBalancer(addrs, HealthCheckConfig{}, alg, logger)
+		t.Run(tt.name, func(t *testing.T) {
+			alg := &fakeAlgorithm{idx: tt.startingIdx}
+			addrs := make([]string, tt.backendCount)
+			for i := range tt.backendCount {
+				addrs[i] = "http://" + strconv.Itoa(i)
+			}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			balancer := NewBalancer(addrs, HealthCheckConfig{}, alg, logger)
 
-		for _, idx := range tt.downBackendsIdx {
-			balancer.backends[idx].up.Store(false)
-		}
+			for _, idx := range tt.downBackendsIdx {
+				balancer.backends[idx].up.Store(false)
+			}
 
-		actual, err := balancer.GetNextBackend()
-		if (err != nil) != tt.expectedErr {
-			t.Fatalf("GetNextBackend() error = %v, expectErr %v", err, tt.expectedErr)
-		}
+			actual, err := balancer.GetNextBackend()
+			if (err != nil) != tt.expectedErr {
+				t.Fatalf("GetNextBackend() error = %v, expectErr %v", err, tt.expectedErr)
+			}
 
-		// if we expected an error we can stop here
-		if tt.expectedErr {
-			return
-		}
+			// if we expected an error we can stop here
+			if tt.expectedErr {
+				return
+			}
 
-		if actual != tt.expected {
-			t.Errorf("got %s, want %s", actual, tt.expected)
-		}
+			if actual != tt.expected {
+				t.Errorf("got %s, want %s", actual, tt.expected)
+			}
+		})
 	}
 }
