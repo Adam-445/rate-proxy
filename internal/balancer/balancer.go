@@ -30,20 +30,6 @@ func (ba *backend) isUp() bool {
 	return ba.up.Load()
 }
 
-type Algorithm interface {
-	Next(n int) int // given n backends, return which one to use next
-}
-
-type RoundRobin struct {
-	counter atomic.Uint32
-}
-
-func (rr *RoundRobin) Next(n int) int {
-	cur := rr.counter.Add(1)
-	idx := int(cur-1) % n
-	return idx
-}
-
 type Balancer struct {
 	backends  []*backend
 	algorithm Algorithm
@@ -54,9 +40,8 @@ type Balancer struct {
 	// - Periodic refreshes
 	// - Close old connections...
 	proxies sync.Map // Cached proxies
-
-	hc     HealthCheckConfig
-	logger *slog.Logger
+	hc      HealthCheckConfig
+	logger  *slog.Logger
 }
 
 // TODO: Make health checks injectable or configurable
