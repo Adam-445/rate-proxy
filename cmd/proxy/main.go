@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/Adam-445/rate-proxy/internal/balancer"
 	"github.com/Adam-445/rate-proxy/internal/config"
@@ -69,9 +72,42 @@ func main() {
 
 	handler := NewProxyHandler(l, b, logger)
 
-	logger.Info("proxy listening", "addr", cfg.Frontend.Port)
-	if err := http.ListenAndServe(cfg.Frontend.Port, handler); err != nil {
-		logger.Error("server error", "error", err)
-		os.Exit(1)
+	server := &http.Server{
+		Addr:    cfg.Frontend.Port,
+		Handler: handler,
 	}
+	errChan := make(chan error, 1)
+	logger.Info("proxy listening", "addr", cfg.Frontend.Port)
+	go startServer(server, errChan)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// wait for either a signal or a server error
+	select {
+	case sig := <-sigChan:
+		logger.Info("Received signal. Shutting down.", "signal", sig)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Shutdown closes the listener and waits for in-flight requests
+		if err := server.Shutdown(ctx); err != nil {
+			logger.Warn("Graceful shutdown failed", "error", err)
+		} else {
+			logger.Info("Server shut down.")
+		}
+	case err := <-errChan:
+		if err != nil {
+			logger.Error("Server error", "error", err)
+		}
+	}
+}
+
+func startServer(server *http.Server, errorChannel chan error) {
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		errorChannel <- err
+	}
+	close(errorChannel)
 }
