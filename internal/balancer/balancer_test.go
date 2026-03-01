@@ -13,7 +13,7 @@ func TestBalancer_RoundRobin(t *testing.T) {
 		"http://localhost:8083",
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := NewBalancer(backends, HealthCheckConfig{}, logger)
+	b := NewBalancer(backends, HealthCheckConfig{}, &RoundRobin{}, logger)
 
 	// Call 9 times, should cycle 3 times
 	for i := range 9 {

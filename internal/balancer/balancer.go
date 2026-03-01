@@ -30,19 +30,35 @@ func (ba *backend) isUp() bool {
 	return ba.up.Load()
 }
 
+type Algorithm interface {
+	Next(n int) int // given n backends, return which one to use next
+}
+
+type RoundRobin struct {
+	counter atomic.Uint32
+}
+
+func (rr *RoundRobin) Next(n int) int {
+	cur := rr.counter.Add(1)
+	idx := int(cur-1) % n
+	return idx
+}
+
 type Balancer struct {
-	// TODO: skip dead backends / healthchecks
-	backends []*backend // List of backend addresses
+	backends []*backend
+
 	// TODO: Consider making balancing algorithms swappable
-	counter atomic.Uint32 // Thread-safe counter
+	algorithm Algorithm
+
 	// TODO: Replace permanent caching to face changes
 	// (DNS changes, proxy.Transport settings can change)
 	// - TTL
 	// - Periodic refreshes
 	// - Close old connections...
 	proxies sync.Map // Cached proxies
-	hc      HealthCheckConfig
-	logger  *slog.Logger
+
+	hc     HealthCheckConfig
+	logger *slog.Logger
 }
 
 // TODO: Make health checks injectable or configurable
@@ -74,8 +90,8 @@ func (b *Balancer) runHealthcheck(backend *backend) {
 	}
 }
 
-func NewBalancer(addresses []string, hc HealthCheckConfig, logger *slog.Logger) *Balancer {
-	b := &Balancer{hc: hc, logger: logger}
+func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, logger *slog.Logger) *Balancer {
+	b := &Balancer{hc: hc, algorithm: algorithm, logger: logger}
 	backends := make([]*backend, len(addresses))
 	for i, addr := range addresses {
 		// Add scheme if missing
@@ -93,10 +109,10 @@ func NewBalancer(addresses []string, hc HealthCheckConfig, logger *slog.Logger) 
 
 func (b *Balancer) GetNextBackend() (string, error) {
 	for attempts := 0; attempts < len(b.backends); attempts++ {
-		n := b.counter.Add(1)
-		idx := int(n-1) % len(b.backends)
+		// TODO: Scan forward for healthy backends instead of recalling .Next
+		idx := b.algorithm.Next(len(b.backends))
 		backend := b.backends[idx]
-		if backend.isUp() {
+		for backend.isUp() {
 			return backend.address, nil
 		}
 	}

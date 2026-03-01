@@ -1,6 +1,6 @@
 {
   "storage": {
-    "type": "redis",
+    "type": "memory",
     "redis": {
       "address": "localhost:6379",
       "password": "",

@@ -53,7 +53,12 @@ func main() {
 		TimeoutSeconds:  cfg.Backend.HealthCheck.TimeoutSeconds,
 		MaxRetries:      cfg.Backend.HealthCheck.MaxRetries,
 	}
-	b := balancer.NewBalancer(addrs, hc, logger)
+	var algorithm balancer.Algorithm
+	switch cfg.Backend.Algorithm {
+	case "round-robin":
+		algorithm = &balancer.RoundRobin{}
+	}
+	b := balancer.NewBalancer(addrs, hc, algorithm, logger)
 
 	handler := NewProxyHandler(l, b, logger)
 
