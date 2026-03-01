@@ -108,10 +108,9 @@ func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, 
 }
 
 func (b *Balancer) GetNextBackend() (string, error) {
+	idx := b.algorithm.Next(len(b.backends))
 	for attempts := 0; attempts < len(b.backends); attempts++ {
-		// TODO: Scan forward for healthy backends instead of recalling .Next
-		idx := b.algorithm.Next(len(b.backends))
-		backend := b.backends[idx]
+		backend := b.backends[(idx+attempts)%len(b.backends)]
 		for backend.isUp() {
 			return backend.address, nil
 		}
