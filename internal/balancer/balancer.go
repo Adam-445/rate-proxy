@@ -45,9 +45,7 @@ func (rr *RoundRobin) Next(n int) int {
 }
 
 type Balancer struct {
-	backends []*backend
-
-	// TODO: Consider making balancing algorithms swappable
+	backends  []*backend
 	algorithm Algorithm
 
 	// TODO: Replace permanent caching to face changes
@@ -111,7 +109,7 @@ func (b *Balancer) GetNextBackend() (string, error) {
 	idx := b.algorithm.Next(len(b.backends))
 	for attempts := 0; attempts < len(b.backends); attempts++ {
 		backend := b.backends[(idx+attempts)%len(b.backends)]
-		for backend.isUp() {
+		if backend.isUp() {
 			return backend.address, nil
 		}
 	}
