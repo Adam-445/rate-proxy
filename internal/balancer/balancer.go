@@ -82,6 +82,9 @@ func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, 
 			addr = "http://" + addr
 		}
 		currBackend := &backend{address: addr}
+
+		// Start optimistic, assume backends are up until proven otherwise
+		// (if you configured a backend it's probably up :D )
 		currBackend.up.Store(true)
 		backends[i] = currBackend
 		go b.runHealthcheck(currBackend)
