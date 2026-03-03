@@ -120,7 +120,7 @@ func (c *Config) validate() error {
 	if c.Frontend.RateLimit.Rate <= 0 {
 		return fmt.Errorf("frontend.rate_limit.rate must be greater than 0")
 	}
-	validAlgorithms := map[string]bool{"round-robin": true}
+	validAlgorithms := map[string]bool{"round-robin": true, "random-selection": true}
 	if !validAlgorithms[c.Backend.Algorithm] {
 		return fmt.Errorf("unknown algorithm %q", c.Backend.Algorithm)
 	}

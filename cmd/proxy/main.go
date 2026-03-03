@@ -63,6 +63,8 @@ func main() {
 	switch cfg.Backend.Algorithm {
 	case "round-robin":
 		algorithm = &balancer.RoundRobin{}
+	case "random-selection":
+		algorithm = &balancer.RandomSelection{}
 	default:
 		logger.Error("Unrecognized balancing algorithm", "algorithm", cfg.Backend.Algorithm)
 		os.Exit(1)
