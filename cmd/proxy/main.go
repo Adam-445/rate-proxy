@@ -23,7 +23,18 @@ func main() {
 	configPath := flag.String("config", "config.json", "path to config file")
 	flag.Parse()
 
-	cfg, err := config.LoadConfig(*configPath)
+	f, err := os.Open(*configPath)
+	if err != nil {
+		logger.Error("failed to open config", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			logger.Warn("error closing config file", "error", err)
+		}
+	}()
+
+	cfg, err := config.LoadConfig(f)
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)

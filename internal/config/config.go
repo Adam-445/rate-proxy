@@ -4,7 +4,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 )
 
 type Config struct {
@@ -50,21 +50,9 @@ type Redis struct {
 	DB       int    `json:"db"`
 }
 
-func LoadConfig(path string) (config *Config, err error) {
-	jsonFile, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		closeErr := jsonFile.Close()
-		if err == nil {
-			err = closeErr
-		}
-	}()
-
+func LoadConfig(r io.Reader) (config *Config, err error) {
 	config = &Config{}
-	decoder := json.NewDecoder(jsonFile)
+	decoder := json.NewDecoder(r)
 
 	err = decoder.Decode(&config)
 	if err != nil {
