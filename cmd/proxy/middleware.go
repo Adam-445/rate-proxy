@@ -22,27 +22,19 @@ func RateLimitMiddleware(limiter RateLimiter, next http.Handler) http.Handler {
 }
 
 type responseRecorder struct {
-	writer http.ResponseWriter
+	http.ResponseWriter
 	status int
-}
-
-func (r *responseRecorder) Header() http.Header {
-	return r.writer.Header()
 }
 
 func (r *responseRecorder) WriteHeader(code int) {
 	r.status = code
-	r.writer.WriteHeader(code)
-}
-
-func (r *responseRecorder) Write(b []byte) (int, error) {
-	return r.writer.Write(b)
+	r.ResponseWriter.WriteHeader(code)
 }
 
 func LoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		recorder := &responseRecorder{writer: w, status: http.StatusOK}
+		recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
 
 		next.ServeHTTP(recorder, r)
 
