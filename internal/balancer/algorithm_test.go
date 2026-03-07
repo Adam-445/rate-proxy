@@ -2,7 +2,7 @@ package balancer
 
 import "testing"
 
-func TestAlgorithm_RoundRobin(t *testing.T) {
+func TestRoundRobin(t *testing.T) {
 	rr := &RoundRobin{}
 	backendCount := 3
 	// Call 9 times, should cycle 3 times

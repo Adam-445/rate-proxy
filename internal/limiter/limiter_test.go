@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestLimiter_AllowsRequestsUpToCapacity(t *testing.T) {
+func TestAllowsRequestsUpToCapacity(t *testing.T) {
 	store := &InMemoryBucketStore{data: make(map[string]*bucket)}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	limiter := NewLimiter(store, 3, 1, logger)
@@ -24,7 +24,7 @@ func TestLimiter_AllowsRequestsUpToCapacity(t *testing.T) {
 	}
 }
 
-func TestLimiter_RefillsTokensOverTime(t *testing.T) {
+func TestRefillsTokensOverTime(t *testing.T) {
 	store := &InMemoryBucketStore{data: make(map[string]*bucket)}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	limiter := NewLimiter(store, 3, 1, logger)

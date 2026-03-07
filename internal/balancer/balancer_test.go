@@ -15,7 +15,7 @@ func (f *fakeAlgorithm) Next(n int) int {
 	return f.idx
 }
 
-func TestBalancer_DownBackend(t *testing.T) {
+func TestDownBackend(t *testing.T) {
 	tests := []struct {
 		name            string
 		startingIdx     int

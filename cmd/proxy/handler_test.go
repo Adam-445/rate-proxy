@@ -36,7 +36,7 @@ func (b *FakeBalancer) GetProxy(target *url.URL) *httputil.ReverseProxy {
 	return proxy
 }
 
-func TestHandler_NormalRequest(t *testing.T) {
+func TestNormalRequest(t *testing.T) {
 	// Normal request -> expected to be handled correctly
 	expected := "Hello"
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func TestHandler_NormalRequest(t *testing.T) {
 	}
 }
 
-func TestHandler_RateLimiting(t *testing.T) {
+func TestRateLimiting(t *testing.T) {
 	// Request is rate limited -> expect 429
 	limiter := &FakeLimiter{allow: false}
 	balancer := &FakeBalancer{backendAddress: "", error: nil}
@@ -88,7 +88,7 @@ func TestHandler_RateLimiting(t *testing.T) {
 	}
 }
 
-func TestHandler_NoBackendsAvailable(t *testing.T) {
+func TestNoBackendsAvailable(t *testing.T) {
 	// No backends available -> expect 503
 	limiter := &FakeLimiter{allow: true}
 	balancer := &FakeBalancer{backendAddress: "", error: errors.New("no backends")}
