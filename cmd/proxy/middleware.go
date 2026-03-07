@@ -36,21 +36,18 @@ func (r *responseRecorder) WriteHeader(code int) {
 }
 
 func (r *responseRecorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
-	}
 	return r.writer.Write(b)
 }
 
 func LoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		recorder := &responseRecorder{writer: w}
+		recorder := &responseRecorder{writer: w, status: http.StatusOK}
 
 		next.ServeHTTP(recorder, r)
 
 		duration := time.Since(start)
-		logger.Info("Request processesed",
+		logger.Info("Request processed",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", recorder.status,
