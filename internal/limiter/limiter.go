@@ -3,6 +3,7 @@
 package limiter
 
 import (
+	"log/slog"
 	"math"
 	"time"
 )
@@ -11,10 +12,11 @@ type Limiter struct {
 	store    BucketStore
 	capacity float64
 	rate     float64
+	logger   *slog.Logger
 }
 
-func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64) *Limiter {
-	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
+func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64, logger *slog.Logger) *Limiter {
+	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond, logger: logger}
 }
 
 func (l *Limiter) Allow(clientID string, now time.Time) bool {

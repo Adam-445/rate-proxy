@@ -49,7 +49,8 @@ func TestHandler_NormalRequest(t *testing.T) {
 	limiter := &FakeLimiter{allow: true}
 	balancer := &FakeBalancer{backendAddress: svr.URL, error: nil}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewProxyHandler(limiter, balancer, logger)
+	proxy := NewProxyHandler(balancer, logger)
+	handler := RateLimitMiddleware(limiter, logger, proxy)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()
@@ -75,7 +76,8 @@ func TestHandler_RateLimiting(t *testing.T) {
 	limiter := &FakeLimiter{allow: false}
 	balancer := &FakeBalancer{backendAddress: "", error: nil}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewProxyHandler(limiter, balancer, logger)
+	proxy := NewProxyHandler(balancer, logger)
+	handler := RateLimitMiddleware(limiter, logger, proxy)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()
@@ -91,7 +93,8 @@ func TestHandler_NoBackendsAvailable(t *testing.T) {
 	limiter := &FakeLimiter{allow: true}
 	balancer := &FakeBalancer{backendAddress: "", error: errors.New("no backends")}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewProxyHandler(limiter, balancer, logger)
+	proxy := NewProxyHandler(balancer, logger)
+	handler := RateLimitMiddleware(limiter, logger, proxy)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	recorder := httptest.NewRecorder()

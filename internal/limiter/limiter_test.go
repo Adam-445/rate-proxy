@@ -1,13 +1,16 @@
 package limiter
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 )
 
 func TestLimiter_AllowsRequestsUpToCapacity(t *testing.T) {
 	store := &InMemoryBucketStore{data: make(map[string]*bucket)}
-	limiter := NewLimiter(store, 3, 1)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	limiter := NewLimiter(store, 3, 1, logger)
 	fixedTime := time.Unix(0, 0).UTC()
 
 	for i := range 4 {
@@ -23,7 +26,8 @@ func TestLimiter_AllowsRequestsUpToCapacity(t *testing.T) {
 
 func TestLimiter_RefillsTokensOverTime(t *testing.T) {
 	store := &InMemoryBucketStore{data: make(map[string]*bucket)}
-	limiter := NewLimiter(store, 3, 1)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	limiter := NewLimiter(store, 3, 1, logger)
 	fixedTime := time.Unix(0, 0).UTC()
 	requestNumber := 0
 
