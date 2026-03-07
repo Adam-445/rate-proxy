@@ -13,6 +13,7 @@ func RateLimitMiddleware(limiter RateLimiter, next http.Handler) http.Handler {
 			host = r.RemoteAddr
 		}
 		if !limiter.Allow(host, time.Now()) {
+			http.Error(w, "Request limit reached", http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)
