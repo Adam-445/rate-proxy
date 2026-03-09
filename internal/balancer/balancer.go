@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Adam-445/rate-proxy/internal/proxy"
 )
 
 type HealthCheckConfig struct {
@@ -104,12 +104,11 @@ func (b *Balancer) GetNextBackend() (string, error) {
 	return "", fmt.Errorf("no backends available") // No backends up
 }
 
-func (b *Balancer) GetProxy(target *url.URL) *httputil.ReverseProxy {
-	key := target.String()
-	if val, ok := b.proxies.Load(key); ok {
-		return val.(*httputil.ReverseProxy)
+func (b *Balancer) GetProxy(targetAdrs string) *proxy.ReverseProxy {
+	if val, ok := b.proxies.Load(targetAdrs); ok {
+		return val.(*proxy.ReverseProxy)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	actual, _ := b.proxies.LoadOrStore(key, proxy)
-	return actual.(*httputil.ReverseProxy)
+	p, _ := proxy.NewReverseProxy(targetAdrs)
+	actual, _ := b.proxies.LoadOrStore(targetAdrs, p)
+	return actual.(*proxy.ReverseProxy)
 }
