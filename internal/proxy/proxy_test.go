@@ -88,7 +88,7 @@ func TestServeHTTP(t *testing.T) {
 				return res, err
 			})
 
-			// Inject our mock transport [cite: 37]
+			// Inject our mock transport
 			rp, err := NewReverseProxy(tt.target, transport, logger)
 			if err != nil {
 				t.Fatalf("Failed to create proxy: %v", err)

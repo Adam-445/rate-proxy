@@ -22,6 +22,10 @@ func NewReverseProxy(target string, transport http.RoundTripper, logger *slog.Lo
 		return nil, err
 	}
 
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
