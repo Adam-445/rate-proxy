@@ -23,30 +23,26 @@ var hopByHop = []string{
 }
 
 type ReverseProxy struct {
-	targetURL *url.URL
-	client    *http.Client
+	target    *url.URL
+	transport http.RoundTripper
 	logger    *slog.Logger
 }
 
-func NewReverseProxy(target string, logger *slog.Logger) (*ReverseProxy, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
+func NewReverseProxy(target string, transport http.RoundTripper, logger *slog.Logger) (*ReverseProxy, error) {
 	u, err := url.Parse(target)
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{
-		// reuse default transport to enable keep-alives
-		Transport: http.DefaultTransport,
+
+	if transport == nil {
+		transport = http.DefaultTransport
 	}
-	return &ReverseProxy{targetURL: u, client: client, logger: logger}, nil
+	return &ReverseProxy{target: u, transport: transport, logger: logger}, nil
 }
 
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	partialURL := &url.URL{Path: req.URL.Path, RawQuery: req.URL.RawQuery}
-	finalURL := rp.targetURL.ResolveReference(partialURL)
+	finalURL := rp.target.ResolveReference(partialURL)
 
 	proxyReq, err := http.NewRequestWithContext(req.Context(), req.Method, finalURL.String(), req.Body)
 	if err != nil {
@@ -77,8 +73,9 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Via header (per RFC: "1.1 proxyname")
 	proxyReq.Header.Add("Via", fmt.Sprintf("%d.%d %s", req.ProtoMajor, req.ProtoMinor, "rate-proxy"))
 
-	resp, err := rp.client.Do(proxyReq)
+	resp, err := rp.transport.RoundTrip(proxyReq)
 	if err != nil {
+		rp.logger.Error("Backend request failed", "target", rp.target.String(), "error", err)
 		http.Error(rw, "Bad Gateway", http.StatusBadGateway)
 		return
 	}

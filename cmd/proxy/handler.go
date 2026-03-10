@@ -26,7 +26,7 @@ func (h *ProxyHandler) getProxy(target string) http.Handler {
 		return val.(*proxy.ReverseProxy)
 	}
 
-	p, _ := proxy.NewReverseProxy(target, h.logger)
+	p, _ := proxy.NewReverseProxy(target, nil, h.logger)
 	actual, _ := h.proxies.LoadOrStore(target, p)
 	return actual.(*proxy.ReverseProxy)
 }
