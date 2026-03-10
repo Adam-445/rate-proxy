@@ -4,6 +4,7 @@ package proxy
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,9 +25,14 @@ var hopByHop = []string{
 type ReverseProxy struct {
 	targetURL *url.URL
 	client    *http.Client
+	logger    *slog.Logger
 }
 
-func NewReverseProxy(target string) (*ReverseProxy, error) {
+func NewReverseProxy(target string, logger *slog.Logger) (*ReverseProxy, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	u, err := url.Parse(target)
 	if err != nil {
 		return nil, err
@@ -35,7 +41,7 @@ func NewReverseProxy(target string) (*ReverseProxy, error) {
 		// reuse default transport to enable keep-alives
 		Transport: http.DefaultTransport,
 	}
-	return &ReverseProxy{targetURL: u, client: client}, nil
+	return &ReverseProxy{targetURL: u, client: client, logger: logger}, nil
 }
 
 func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -69,14 +75,19 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	proxyReq.Header.Add("X-Forwarded-For", clientIP)
 
 	// Via header (per RFC: "1.1 proxyname")
-	proxyReq.Header.Add("Via", fmt.Sprintf("%d %s", req.ProtoMajor, "rate-proxy"))
+	proxyReq.Header.Add("Via", fmt.Sprintf("%d.%d %s", req.ProtoMajor, req.ProtoMinor, "rate-proxy"))
 
 	resp, err := rp.client.Do(proxyReq)
 	if err != nil {
 		http.Error(rw, "Bad Gateway", http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			rp.logger.Warn("Couldnt close response body", "error", err)
+			return
+		}
+	}()
 
 	// copy response headers
 	for k, vals := range resp.Header {
@@ -89,7 +100,10 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	stripHopByHopHeaders(rw.Header(), resp.Header.Get("Connection"))
 
 	rw.WriteHeader(resp.StatusCode)
-	io.Copy(rw, resp.Body)
+	if _, err := io.Copy(rw, resp.Body); err != nil {
+		rp.logger.Error("Error while copying response stream", "error", err)
+		return
+	}
 }
 
 func stripHopByHopHeaders(h http.Header, connectionHeader string) {
