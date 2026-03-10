@@ -2,8 +2,6 @@ package main
 
 import (
 	"time"
-
-	"github.com/Adam-445/rate-proxy/internal/proxy"
 )
 
 type RateLimiter interface {
@@ -12,5 +10,4 @@ type RateLimiter interface {
 
 type BackendBalancer interface {
 	GetNextBackend() (string, error)
-	GetProxy(string) *proxy.ReverseProxy
 }

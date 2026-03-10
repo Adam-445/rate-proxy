@@ -8,11 +8,8 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/Adam-445/rate-proxy/internal/proxy"
 )
 
 type HealthCheckConfig struct {
@@ -39,9 +36,8 @@ type Balancer struct {
 	// - TTL
 	// - Periodic refreshes
 	// - Close old connections...
-	proxies sync.Map // Cached proxies
-	hc      HealthCheckConfig
-	logger  *slog.Logger
+	hc     HealthCheckConfig
+	logger *slog.Logger
 }
 
 // TODO: Make health checks injectable or configurable
@@ -102,13 +98,4 @@ func (b *Balancer) GetNextBackend() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no backends available") // No backends up
-}
-
-func (b *Balancer) GetProxy(targetAdrs string) *proxy.ReverseProxy {
-	if val, ok := b.proxies.Load(targetAdrs); ok {
-		return val.(*proxy.ReverseProxy)
-	}
-	p, _ := proxy.NewReverseProxy(targetAdrs)
-	actual, _ := b.proxies.LoadOrStore(targetAdrs, p)
-	return actual.(*proxy.ReverseProxy)
 }

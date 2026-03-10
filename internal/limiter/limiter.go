@@ -45,7 +45,6 @@ func (l *Limiter) Allow(clientID string, now time.Time) bool {
 	if userBucket.Tokens >= 1 {
 		userBucket.Tokens -= 1
 	} else {
-		l.logger.Warn("Rate limit exceeded", "client", clientID)
 		return false
 	}
 

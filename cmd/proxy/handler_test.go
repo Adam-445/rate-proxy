@@ -9,8 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/Adam-445/rate-proxy/internal/proxy"
 )
 
 type (
@@ -29,11 +27,6 @@ func (l *FakeLimiter) Allow(clientID string, now time.Time) bool {
 
 func (b *FakeBalancer) GetNextBackend() (string, error) {
 	return b.backendAddress, b.error
-}
-
-func (b *FakeBalancer) GetProxy(target string) *proxy.ReverseProxy {
-	proxy, _ := proxy.NewReverseProxy(target)
-	return proxy
 }
 
 func TestNormalRequest(t *testing.T) {
