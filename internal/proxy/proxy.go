@@ -8,19 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 )
-
-var hopByHop = []string{
-	"Connection",
-	"Keep-Alive",
-	"Proxy-Authenticate",
-	"Proxy-Authorization",
-	"TE",
-	"Trailer",
-	"Transfer-Encoding",
-	"Upgrade",
-}
 
 type ReverseProxy struct {
 	target    *url.URL
@@ -58,7 +46,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// remove hop-by-hop
-	stripHopByHopHeaders(proxyReq.Header, req.Header.Get("Connection"))
+	stripHopByHopHeaders(proxyReq.Header)
 
 	// perseve host
 	proxyReq.Host = req.Host
@@ -94,28 +82,11 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// strip hop-by-hop headers from response
-	stripHopByHopHeaders(rw.Header(), resp.Header.Get("Connection"))
+	stripHopByHopHeaders(rw.Header())
 
 	rw.WriteHeader(resp.StatusCode)
 	if _, err := io.Copy(rw, resp.Body); err != nil {
 		rp.logger.Error("Error while copying response stream", "error", err)
 		return
-	}
-}
-
-func stripHopByHopHeaders(h http.Header, connectionHeader string) {
-	for _, hk := range hopByHop {
-		h.Del(hk)
-	}
-
-	if connectionHeader == "" {
-		return
-	}
-	for _, name := range strings.Split(connectionHeader, ",") {
-		trimmedName := strings.TrimSpace(name)
-		if trimmedName == "" {
-			continue
-		}
-		h.Del(trimmedName)
 	}
 }
