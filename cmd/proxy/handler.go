@@ -21,14 +21,18 @@ func NewProxyHandler(b BackendBalancer, logger *slog.Logger) *ProxyHandler {
 	}
 }
 
-func (h *ProxyHandler) getProxy(target string) http.Handler {
+func (h *ProxyHandler) getProxy(target string) (http.Handler, error) {
 	if val, ok := h.proxies.Load(target); ok {
-		return val.(*proxy.ReverseProxy)
+		return val.(*proxy.ReverseProxy), nil
 	}
 
-	p, _ := proxy.NewReverseProxy(target, nil, h.logger)
+	p, err := proxy.NewReverseProxy(target, nil, h.logger)
+	if err != nil {
+		h.logger.Error("Failed to create proxy", "target", target, "error", err)
+		return nil, err
+	}
 	actual, _ := h.proxies.LoadOrStore(target, p)
-	return actual.(*proxy.ReverseProxy)
+	return actual.(*proxy.ReverseProxy), nil
 }
 
 func (h *ProxyHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -40,6 +44,9 @@ func (h *ProxyHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	h.logger.Info("proxying request", "client", req.RemoteAddr, "backend", backendAddress, "path", req.URL.Path)
 
-	proxy := h.getProxy(backendAddress)
+	proxy, err := h.getProxy(backendAddress)
+	if err != nil {
+		http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
+	}
 	proxy.ServeHTTP(rw, req)
 }
