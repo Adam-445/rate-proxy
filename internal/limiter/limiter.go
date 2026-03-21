@@ -47,6 +47,8 @@ func (l *Limiter) Allow(clientID string, now time.Time) (bool, error) {
 	}
 
 	// Updates timestamp only if consumes token
-	_ = l.store.Set(key, userBucket, time.Hour)
+	if err := l.store.Set(key, userBucket, time.Hour); err != nil {
+		return false, err
+	}
 	return true, nil
 }
