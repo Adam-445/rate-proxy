@@ -7,6 +7,7 @@ import (
 
 var hopByHop = []string{
 	"Connection",
+	"Proxy-Connection",
 	"Keep-Alive",
 	"Proxy-Authenticate",
 	"Proxy-Authorization",
