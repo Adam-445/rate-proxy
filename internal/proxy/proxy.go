@@ -52,7 +52,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// remove hop-by-hop
 	stripHopByHopHeaders(proxyReq.Header)
 
-	// perseve host
+	// preserve host
 	proxyReq.Host = req.Host
 
 	// X-Forwarded-For
