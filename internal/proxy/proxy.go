@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 type ReverseProxy struct {
@@ -32,10 +33,29 @@ func NewReverseProxy(target string, transport http.RoundTripper, logger *slog.Lo
 	return &ReverseProxy{target: u, transport: transport, logger: logger}, nil
 }
 
-func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	partialURL := &url.URL{Path: req.URL.Path, RawQuery: req.URL.RawQuery}
-	finalURL := rp.target.ResolveReference(partialURL)
+func buildBackendURL(target *url.URL, req *http.Request) url.URL {
+	// Create a copy of the target URL so we don't mutate the original
+	finalURL := *target
 
+	// We manually join target.Path and request path instead of using ResolveReference here because
+	// ResolveReference replaces the base path when the request path starts with '/',
+	// which would drop any prefix configured on the backend (eg. "/api/v1").
+	targetPath := strings.TrimSuffix(finalURL.Path, "/")
+	reqPath := strings.TrimPrefix(req.URL.Path, "/")
+	finalURL.Path = targetPath + "/" + reqPath
+
+	// Merge query parameters if necessary
+	if finalURL.RawQuery == "" || req.URL.RawQuery == "" {
+		finalURL.RawQuery = finalURL.RawQuery + req.URL.RawQuery
+	} else {
+		finalURL.RawQuery = finalURL.RawQuery + "&" + req.URL.RawQuery
+	}
+
+	return finalURL
+}
+
+func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	finalURL := buildBackendURL(rp.target, req)
 	proxyReq, err := http.NewRequestWithContext(req.Context(), req.Method, finalURL.String(), req.Body)
 	if err != nil {
 		http.Error(rw, "Failed to forward", http.StatusBadGateway)
