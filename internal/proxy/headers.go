@@ -17,7 +17,9 @@ var hopByHop = []string{
 }
 
 func stripHopByHopHeaders(h http.Header) {
-	if connHeader := h.Get("Connection"); connHeader != "" {
+	// Iterate through all connection headers
+	for _, connHeader := range h.Values("Connection") {
+		// Split each individual header by comma
 		for _, name := range strings.Split(connHeader, ",") {
 			if trimmed := strings.TrimSpace(name); trimmed != "" {
 				h.Del(trimmed)
@@ -25,6 +27,7 @@ func stripHopByHopHeaders(h http.Header) {
 		}
 	}
 
+	// Strip the standard hop-by-hop headers
 	for _, hk := range hopByHop {
 		h.Del(hk)
 	}
