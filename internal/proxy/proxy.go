@@ -52,8 +52,8 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// remove hop-by-hop
 	stripHopByHopHeaders(proxyReq.Header)
 
-	// preserve host
-	proxyReq.Host = req.Host
+	// preserve original host in X-Forwarded-Host; use backend host for request Host
+	proxyReq.Header.Set("X-Forwarded-Host", req.Host)
 
 	// X-Forwarded-For
 	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
