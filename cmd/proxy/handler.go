@@ -47,6 +47,7 @@ func (h *ProxyHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	proxy, err := h.getProxy(backendAddress)
 	if err != nil {
 		http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
 	proxy.ServeHTTP(rw, req)
 }
