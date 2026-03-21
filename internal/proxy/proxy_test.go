@@ -101,7 +101,7 @@ func TestServeHTTP(t *testing.T) {
 				if res.Header.Get("Keep-Alive") != "" {
 					t.Error("Proxy leaked 'Keep-Alive' to client")
 				}
-				if res.Header.Get("X-Secret-Backend-ID") != "" {
+				if res.Header.Get("X-Secret-ID") != "" {
 					t.Error("Proxy leaked dynamic Connection header to client")
 				}
 
