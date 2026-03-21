@@ -25,6 +25,7 @@ func TestServeHTTP(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 		verifyRequest  func(t *testing.T, r *http.Request)
+		verifyResponse func(t *testing.T, rec *httptest.ResponseRecorder)
 	}{
 		{
 			name:   "Successful forwarding and header stripping",
@@ -71,6 +72,45 @@ func TestServeHTTP(t *testing.T) {
 			},
 			expectedStatus: http.StatusBadGateway,
 		},
+		{
+			name:   "Strips hop-by-hop headers from backend response",
+			target: "http://backend-service",
+			clientRequest: func() *http.Request {
+				return httptest.NewRequest(http.MethodGet, "/", nil)
+			},
+			mockBackend: func(req *http.Request) (*http.Response, error) {
+				// The mock backend returns illegal hop-by-hop headers
+				headers := make(http.Header)
+				headers.Set("Connection", "Keep-Alive, X-Secret-ID")
+				headers.Set("Keep-Alive", "timeout=10")
+				headers.Set("X-Secret-ID", "internal-server-1")
+				headers.Set("Server", "My-Cool-Backend")
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("ok")),
+					Header:     headers,
+				}, nil
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "ok",
+			verifyResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				res := rec.Result()
+
+				// Assert hop-by-hop headers are gone
+				if res.Header.Get("Keep-Alive") != "" {
+					t.Error("Proxy leaked 'Keep-Alive' to client")
+				}
+				if res.Header.Get("X-Secret-Backend-ID") != "" {
+					t.Error("Proxy leaked dynamic Connection header to client")
+				}
+
+				// Assert safe headers REMAIN
+				if res.Header.Get("Server") != "My-Cool-Backend" {
+					t.Error("Proxy stripped a safe header ('Server')")
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -101,6 +141,10 @@ func TestServeHTTP(t *testing.T) {
 
 			if rec.Code != tt.expectedStatus {
 				t.Errorf("Status mismatch: got %d, want %d", rec.Code, tt.expectedStatus)
+			}
+
+			if tt.verifyResponse != nil {
+				tt.verifyResponse(t, rec)
 			}
 
 			if tt.expectedBody != "" {
