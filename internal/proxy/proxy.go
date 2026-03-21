@@ -73,7 +73,7 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			rp.logger.Warn("Couldnt close response body", "error", err)
+			rp.logger.Warn("Couldn't close response body", "error", err)
 			return
 		}
 	}()
