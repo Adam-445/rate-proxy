@@ -56,11 +56,17 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	proxyReq.Host = req.Host
 
 	// X-Forwarded-For
-	clientIP, _, _ := net.SplitHostPort(req.RemoteAddr)
-	if clientIP == "" {
+	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
+	if err != nil {
 		clientIP = req.RemoteAddr
 	}
-	proxyReq.Header.Add("X-Forwarded-For", clientIP)
+
+	// Get the original XFF from the incoming request
+	if prior := req.Header.Get("X-Forwarded-For"); prior != "" {
+		clientIP = prior + ", " + clientIP
+	}
+
+	proxyReq.Header.Set("X-Forwarded-For", clientIP)
 
 	// Via header (per RFC: "1.1 proxyname")
 	proxyReq.Header.Add("Via", fmt.Sprintf("%d.%d %s", req.ProtoMajor, req.ProtoMinor, "rate-proxy"))
