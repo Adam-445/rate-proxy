@@ -21,8 +21,8 @@ type (
 	}
 )
 
-func (l *FakeLimiter) Allow(clientID string, now time.Time) bool {
-	return l.allow
+func (l *FakeLimiter) Allow(clientID string, now time.Time) (bool, error) {
+	return l.allow, nil
 }
 
 func (b *FakeBalancer) GetNextBackend() (string, error) {

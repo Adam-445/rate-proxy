@@ -59,7 +59,7 @@ func main() {
 		logger.Error("Unrecognized storage type", "type", cfg.Storage.Type)
 		os.Exit(1)
 	}
-	l := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate), logger)
+	l := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate))
 
 	addrs := make([]string, len(cfg.Backend.Servers))
 	for i, s := range cfg.Backend.Servers {

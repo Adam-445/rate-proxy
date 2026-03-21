@@ -5,7 +5,7 @@ import (
 )
 
 type RateLimiter interface {
-	Allow(string, time.Time) bool
+	Allow(string, time.Time) (bool, error)
 }
 
 type BackendBalancer interface {
