@@ -65,7 +65,8 @@ func (rp *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	finalURL := buildBackendURL(rp.target, req)
 	proxyReq, err := http.NewRequestWithContext(req.Context(), req.Method, finalURL.String(), req.Body)
 	if err != nil {
-		http.Error(rw, "Failed to forward", http.StatusBadGateway)
+		rp.logger.Error("Failed to create backend request", "target", rp.target.String(), "error", err)
+		http.Error(rw, "Bad Gateway", http.StatusBadGateway)
 		return
 	}
 
