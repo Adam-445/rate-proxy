@@ -91,7 +91,7 @@ func TestProxyMiddleware_Scenarios(t *testing.T) {
 
 			// Build the handler chain
 			proxy := NewProxyHandler(balancer, logger)
-			handler := RateLimitMiddleware(limiter, proxy)
+			handler := RateLimitMiddleware(limiter, proxy, logger)
 
 			// Execute the request
 			req := httptest.NewRequest(http.MethodGet, "/", nil)

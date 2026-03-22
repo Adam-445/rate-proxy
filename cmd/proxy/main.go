@@ -84,7 +84,7 @@ func main() {
 	b := balancer.NewBalancer(addrs, hc, algorithm, logger)
 
 	proxy := NewProxyHandler(b, logger)
-	handler := LoggingMiddleware(logger, RateLimitMiddleware(l, proxy))
+	handler := LoggingMiddleware(logger, RateLimitMiddleware(l, proxy, logger))
 
 	server := &http.Server{
 		Addr:    cfg.Frontend.Port,
