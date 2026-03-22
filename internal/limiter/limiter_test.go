@@ -11,7 +11,10 @@ func TestAllowsRequestsUpToCapacity(t *testing.T) {
 	fixedTime := time.Unix(0, 0).UTC()
 
 	for i := range 4 {
-		allowed, _ := limiter.Allow("TestClient", fixedTime)
+		allowed, err := limiter.Allow("TestClient", fixedTime)
+		if err != nil {
+			t.Fatalf("unexpected error from limiter: %v", err)
+		}
 		if i < 3 && !allowed {
 			t.Errorf("expected request %d to be allowed", i)
 		}
@@ -28,7 +31,10 @@ func TestRefillsTokensOverTime(t *testing.T) {
 	requestNumber := 0
 
 	for ; requestNumber < 3; requestNumber++ {
-		allowed, _ := limiter.Allow("TestClient", fixedTime)
+		allowed, err := limiter.Allow("TestClient", fixedTime)
+		if err != nil {
+			t.Fatalf("unexpected error from limiter: %v", err)
+		}
 
 		if !allowed {
 			t.Errorf("expected request %d to be allowed", requestNumber)
@@ -37,14 +43,20 @@ func TestRefillsTokensOverTime(t *testing.T) {
 
 	fixedTime = fixedTime.Add(2 * time.Second)
 	for ; requestNumber < 5; requestNumber++ {
-		allowed, _ := limiter.Allow("TestClient", fixedTime)
+		allowed, err := limiter.Allow("TestClient", fixedTime)
+		if err != nil {
+			t.Fatalf("unexpected error from limiter: %v", err)
+		}
 
 		if !allowed {
 			t.Errorf("expected request %d to be allowed", requestNumber)
 		}
 	}
 
-	allowed, _ := limiter.Allow("TestClient", fixedTime)
+	allowed, err := limiter.Allow("TestClient", fixedTime)
+	if err != nil {
+		t.Fatalf("unexpected error from limiter: %v", err)
+	}
 	requestNumber++
 	if allowed {
 		t.Errorf("expected request %d to be denied", requestNumber)
