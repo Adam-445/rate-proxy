@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +23,7 @@ type (
 	}
 )
 
-func (l *FakeLimiter) Allow(clientID string, now time.Time) (bool, error) {
+func (l *FakeLimiter) Allow(ctx context.Context, clientID string, now time.Time) (bool, error) {
 	return l.allow, l.err
 }
 

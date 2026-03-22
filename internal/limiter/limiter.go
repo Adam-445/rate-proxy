@@ -3,7 +3,7 @@
 package limiter
 
 import (
-	"math"
+	"context"
 	"time"
 )
 
@@ -17,38 +17,7 @@ func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64)
 	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
 }
 
-func (l *Limiter) Allow(clientID string, now time.Time) (bool, error) {
+func (l *Limiter) Allow(ctx context.Context, clientID string, now time.Time) (bool, error) {
 	key := "client:" + clientID
-
-	// Get from store
-	userBucket, err := l.store.Get(key)
-	if err != nil {
-		return false, err
-	}
-
-	// Create if it doesnt exist
-	if userBucket == nil {
-		userBucket = &bucket{
-			Tokens:    l.capacity,
-			Timestamp: now,
-		}
-	}
-
-	// Refill
-	elapsed := now.Sub(userBucket.Timestamp).Seconds()
-	userBucket.Tokens = math.Min(l.capacity, userBucket.Tokens+(elapsed*l.rate))
-	userBucket.Timestamp = now
-
-	// Consume
-	if userBucket.Tokens >= 1 {
-		userBucket.Tokens -= 1
-	} else {
-		return false, nil
-	}
-
-	// Updates timestamp only if consumes token
-	if err := l.store.Set(key, userBucket, time.Hour); err != nil {
-		return false, err
-	}
-	return true, nil
+	return l.store.Consume(ctx, key, l.capacity, l.rate, now)
 }

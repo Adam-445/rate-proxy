@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"time"
 )
 
 type RateLimiter interface {
-	Allow(string, time.Time) (bool, error)
+	Allow(context.Context, string, time.Time) (bool, error)
 }
 
 type BackendBalancer interface {
