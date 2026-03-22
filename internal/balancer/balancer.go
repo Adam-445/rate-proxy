@@ -31,11 +31,6 @@ type Balancer struct {
 	backends  []*backend
 	algorithm Algorithm
 
-	// TODO: Replace permanent caching to face changes
-	// (DNS changes, proxy.Transport settings can change)
-	// - TTL
-	// - Periodic refreshes
-	// - Close old connections...
 	hc     HealthCheckConfig
 	logger *slog.Logger
 }

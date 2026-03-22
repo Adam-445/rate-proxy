@@ -11,7 +11,14 @@ import (
 type ProxyHandler struct {
 	balancer BackendBalancer
 	logger   *slog.Logger
-	proxies  sync.Map // cached proxies
+
+	// TODO: Replace permanent caching to handle dynamic changes
+	// (DNS changes, proxy.Transport settings can change)
+	// Exmaple solutions:
+	// - TTL
+	// - Periodic refreshes
+	// - Close old connections
+	proxies sync.Map // cached proxies
 }
 
 func NewProxyHandler(b BackendBalancer, logger *slog.Logger) *ProxyHandler {
