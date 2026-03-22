@@ -23,6 +23,13 @@ func NewReverseProxy(target string, transport http.RoundTripper, logger *slog.Lo
 		return nil, err
 	}
 
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("invalid proxy target URL scheme %q: only http and https are supported", u.Scheme)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("invalid proxy target URL %q: host is empty", target)
+	}
+
 	if logger == nil {
 		logger = slog.Default()
 	}
