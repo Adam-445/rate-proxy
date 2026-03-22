@@ -14,7 +14,7 @@ type ProxyHandler struct {
 
 	// TODO: Replace permanent caching to handle dynamic changes
 	// (DNS changes, proxy.Transport settings can change)
-	// Exmaple solutions:
+	// Example solutions:
 	// - TTL
 	// - Periodic refreshes
 	// - Close old connections
