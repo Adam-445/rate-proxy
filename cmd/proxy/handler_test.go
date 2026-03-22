@@ -105,7 +105,10 @@ func TestProxyMiddleware_Scenarios(t *testing.T) {
 
 			// If it's the success case, also verify the body passed through
 			if tt.expectedStatus == http.StatusOK {
-				body, _ := io.ReadAll(recorder.Body)
+				body, err := io.ReadAll(recorder.Body)
+				if err != nil {
+					t.Fatalf("failed to read response body: %v", err)
+				}
 				if string(body) != expectedBody {
 					t.Errorf("Result body mismatch. got %s, want %s", string(body), expectedBody)
 				}
