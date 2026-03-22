@@ -7,10 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -34,14 +31,8 @@ type Balancer struct {
 	backends  []*backend
 	algorithm Algorithm
 
-	// TODO: Replace permanent caching to face changes
-	// (DNS changes, proxy.Transport settings can change)
-	// - TTL
-	// - Periodic refreshes
-	// - Close old connections...
-	proxies sync.Map // Cached proxies
-	hc      HealthCheckConfig
-	logger  *slog.Logger
+	hc     HealthCheckConfig
+	logger *slog.Logger
 }
 
 // TODO: Make health checks injectable or configurable
@@ -102,14 +93,4 @@ func (b *Balancer) GetNextBackend() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no backends available") // No backends up
-}
-
-func (b *Balancer) GetProxy(target *url.URL) *httputil.ReverseProxy {
-	key := target.String()
-	if val, ok := b.proxies.Load(key); ok {
-		return val.(*httputil.ReverseProxy)
-	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	actual, _ := b.proxies.LoadOrStore(key, proxy)
-	return actual.(*httputil.ReverseProxy)
 }

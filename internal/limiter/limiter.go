@@ -3,7 +3,6 @@
 package limiter
 
 import (
-	"log/slog"
 	"math"
 	"time"
 )
@@ -12,20 +11,19 @@ type Limiter struct {
 	store    BucketStore
 	capacity float64
 	rate     float64
-	logger   *slog.Logger
 }
 
-func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64, logger *slog.Logger) *Limiter {
-	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond, logger: logger}
+func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64) *Limiter {
+	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
 }
 
-func (l *Limiter) Allow(clientID string, now time.Time) bool {
+func (l *Limiter) Allow(clientID string, now time.Time) (bool, error) {
 	key := "client:" + clientID
 
 	// Get from store
 	userBucket, err := l.store.Get(key)
 	if err != nil {
-		return false
+		return false, err
 	}
 
 	// Create if it doesnt exist
@@ -45,11 +43,12 @@ func (l *Limiter) Allow(clientID string, now time.Time) bool {
 	if userBucket.Tokens >= 1 {
 		userBucket.Tokens -= 1
 	} else {
-		l.logger.Warn("Rate limit exceeded", "client", clientID)
-		return false
+		return false, nil
 	}
 
 	// Updates timestamp only if consumes token
-	_ = l.store.Set(key, userBucket, time.Hour)
-	return true
+	if err := l.store.Set(key, userBucket, time.Hour); err != nil {
+		return false, err
+	}
+	return true, nil
 }
