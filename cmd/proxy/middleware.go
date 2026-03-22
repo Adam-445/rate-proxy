@@ -17,7 +17,7 @@ func RateLimitMiddleware(limiter RateLimiter, next http.Handler, logger *slog.Lo
 		allowed, err := limiter.Allow(host, time.Now())
 		if err != nil {
 			logger.Error("Rate limiter internal error", "host", host, "error", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		if !allowed {
