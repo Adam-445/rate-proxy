@@ -7,13 +7,20 @@ import (
 	"time"
 )
 
-func RateLimitMiddleware(limiter RateLimiter, next http.Handler) http.Handler {
+func RateLimitMiddleware(limiter RateLimiter, next http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			host = r.RemoteAddr
 		}
-		if !limiter.Allow(host, time.Now()) {
+
+		allowed, err := limiter.Allow(r.Context(), host, time.Now())
+		if err != nil {
+			logger.Error("Rate limiter internal error", "host", host, "error", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
 			http.Error(w, "Request limit reached", http.StatusTooManyRequests)
 			return
 		}

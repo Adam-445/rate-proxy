@@ -1,14 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/http/httputil"
-	"net/url"
 	"testing"
 	"time"
 )
@@ -16,91 +15,105 @@ import (
 type (
 	FakeLimiter struct {
 		allow bool
+		err   error
 	}
 	FakeBalancer struct {
 		backendAddress string
-		error          error
+		err            error
 	}
 )
 
-func (l *FakeLimiter) Allow(clientID string, now time.Time) bool {
-	return l.allow
+func (l *FakeLimiter) Allow(ctx context.Context, clientID string, now time.Time) (bool, error) {
+	return l.allow, l.err
 }
 
 func (b *FakeBalancer) GetNextBackend() (string, error) {
-	return b.backendAddress, b.error
+	return b.backendAddress, b.err
 }
 
-func (b *FakeBalancer) GetProxy(target *url.URL) *httputil.ReverseProxy {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	return proxy
-}
-
-func TestNormalRequest(t *testing.T) {
-	// Normal request -> expected to be handled correctly
-	expected := "Hello"
+func TestProxyMiddleware_Scenarios(t *testing.T) {
+	// Spin up a single fake backend for the success cases to route to
+	expectedBody := "Hello"
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := fmt.Fprint(w, expected); err != nil {
+		if _, err := fmt.Fprint(w, expectedBody); err != nil {
 			t.Fatalf("error writing response: %s", err)
 		}
 	}))
 	defer svr.Close()
 
-	limiter := &FakeLimiter{allow: true}
-	balancer := &FakeBalancer{backendAddress: svr.URL, error: nil}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	proxy := NewProxyHandler(balancer, logger)
-	handler := RateLimitMiddleware(limiter, proxy)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	res := recorder.Result()
-	defer func() { _ = res.Body.Close() }()
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Fatalf("expected error to be nil. got %v", err)
+	tests := []struct {
+		name           string
+		limiterAllow   bool
+		limiterErr     error
+		balancerAddr   string
+		balancerErr    error
+		expectedStatus int
+	}{
+		{
+			name:           "Normal Request Success",
+			limiterAllow:   true,
+			limiterErr:     nil,
+			balancerAddr:   svr.URL,
+			balancerErr:    nil,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Rate Limit Exceeded",
+			limiterAllow:   false,
+			limiterErr:     nil,
+			balancerAddr:   svr.URL, // Balancer shouldn't even be reached
+			balancerErr:    nil,
+			expectedStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:           "Limiter Internal Error",
+			limiterAllow:   false,
+			limiterErr:     errors.New("redis connection timeout"),
+			balancerAddr:   svr.URL,
+			balancerErr:    nil,
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name:           "No Backends Available",
+			limiterAllow:   true,
+			limiterErr:     nil,
+			balancerAddr:   "",
+			balancerErr:    errors.New("all backends down"),
+			expectedStatus: http.StatusServiceUnavailable,
+		},
 	}
 
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("Status code error. got %d, want %d", res.StatusCode, http.StatusOK)
-	}
-	if string(data) != expected {
-		t.Errorf("Result body mismatch. got %s, want %s", string(data), expected)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup the fakes based on the table row
+			limiter := &FakeLimiter{allow: tt.limiterAllow, err: tt.limiterErr}
+			balancer := &FakeBalancer{backendAddress: tt.balancerAddr, err: tt.balancerErr}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-func TestRateLimiting(t *testing.T) {
-	// Request is rate limited -> expect 429
-	limiter := &FakeLimiter{allow: false}
-	balancer := &FakeBalancer{backendAddress: "", error: nil}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	proxy := NewProxyHandler(balancer, logger)
-	handler := RateLimitMiddleware(limiter, proxy)
+			// Build the handler chain
+			proxy := NewProxyHandler(balancer, logger)
+			handler := RateLimitMiddleware(limiter, proxy, logger)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+			// Execute the request
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusTooManyRequests {
-		t.Errorf("Status code error. got %d, want %d", recorder.Code, http.StatusTooManyRequests)
-	}
-}
+			// Assert
+			if recorder.Code != tt.expectedStatus {
+				t.Errorf("got status %d, want %d", recorder.Code, tt.expectedStatus)
+			}
 
-func TestNoBackendsAvailable(t *testing.T) {
-	// No backends available -> expect 503
-	limiter := &FakeLimiter{allow: true}
-	balancer := &FakeBalancer{backendAddress: "", error: errors.New("no backends")}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	proxy := NewProxyHandler(balancer, logger)
-	handler := RateLimitMiddleware(limiter, proxy)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Errorf("Status code error. got %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+			// If it's the success case, also verify the body passed through
+			if tt.expectedStatus == http.StatusOK {
+				body, err := io.ReadAll(recorder.Body)
+				if err != nil {
+					t.Fatalf("failed to read response body: %v", err)
+				}
+				if string(body) != expectedBody {
+					t.Errorf("Result body mismatch. got %s, want %s", string(body), expectedBody)
+				}
+			}
+		})
 	}
 }

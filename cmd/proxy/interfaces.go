@@ -1,16 +1,14 @@
 package main
 
 import (
-	"net/http/httputil"
-	"net/url"
+	"context"
 	"time"
 )
 
 type RateLimiter interface {
-	Allow(string, time.Time) bool
+	Allow(context.Context, string, time.Time) (bool, error)
 }
 
 type BackendBalancer interface {
 	GetNextBackend() (string, error)
-	GetProxy(*url.URL) *httputil.ReverseProxy
 }

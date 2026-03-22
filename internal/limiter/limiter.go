@@ -3,8 +3,7 @@
 package limiter
 
 import (
-	"log/slog"
-	"math"
+	"context"
 	"time"
 )
 
@@ -12,44 +11,13 @@ type Limiter struct {
 	store    BucketStore
 	capacity float64
 	rate     float64
-	logger   *slog.Logger
 }
 
-func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64, logger *slog.Logger) *Limiter {
-	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond, logger: logger}
+func NewLimiter(store BucketStore, maxCapacity float64, tokensPerSecond float64) *Limiter {
+	return &Limiter{store: store, capacity: maxCapacity, rate: tokensPerSecond}
 }
 
-func (l *Limiter) Allow(clientID string, now time.Time) bool {
+func (l *Limiter) Allow(ctx context.Context, clientID string, now time.Time) (bool, error) {
 	key := "client:" + clientID
-
-	// Get from store
-	userBucket, err := l.store.Get(key)
-	if err != nil {
-		return false
-	}
-
-	// Create if it doesnt exist
-	if userBucket == nil {
-		userBucket = &bucket{
-			Tokens:    l.capacity,
-			Timestamp: now,
-		}
-	}
-
-	// Refill
-	elapsed := now.Sub(userBucket.Timestamp).Seconds()
-	userBucket.Tokens = math.Min(l.capacity, userBucket.Tokens+(elapsed*l.rate))
-	userBucket.Timestamp = now
-
-	// Consume
-	if userBucket.Tokens >= 1 {
-		userBucket.Tokens -= 1
-	} else {
-		l.logger.Warn("Rate limit exceeded", "client", clientID)
-		return false
-	}
-
-	// Updates timestamp only if consumes token
-	_ = l.store.Set(key, userBucket, time.Hour)
-	return true
+	return l.store.Consume(ctx, key, l.capacity, l.rate, now)
 }
