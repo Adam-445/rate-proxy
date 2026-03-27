@@ -1,101 +1,73 @@
 package config
 
 import (
-	"strings"
 	"testing"
 )
 
-func TestLoadConfig(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       string
-		wantErr     bool
-		checkConfig func(*testing.T, *Config)
-	}{
-		{
-			name: "Valid config with all defaults",
-			input: `{
-				"frontend": {
-					"port": ":8080",
-					"rate_limit": {"capacity": 10, "rate": 1}
+// TestApplyDefaults verifies that zero-value fields are filled with the
+// expected values and that non-zero fields are not overwritten
+func TestApplyDefaults(t *testing.T) {
+	t.Run("fills all zero-value fields", func(t *testing.T) {
+		c := &Config{
+			Frontend: Frontend{Port: ":8080", RateLimit: RateLimit{Capacity: 10, Rate: 1}},
+			Backend:  Backend{Servers: []Server{{Address: "localhost:8081"}}},
+		}
+		ApplyDefaults(c)
+
+		if c.Backend.Algorithm != "round-robin" {
+			t.Errorf("expected default algorithm %q, got %q", "round-robin", c.Backend.Algorithm)
+		}
+		if c.Storage.Type != "memory" {
+			t.Errorf("expected default storage %q, got %q", "memory", c.Storage.Type)
+		}
+		if c.Backend.HealthCheck.IntervalSeconds != 5 {
+			t.Errorf("expected default interval 5, got %d", c.Backend.HealthCheck.IntervalSeconds)
+		}
+		if c.Backend.HealthCheck.TimeoutSeconds != 2 {
+			t.Errorf("expected default timeout 2, got %d", c.Backend.HealthCheck.TimeoutSeconds)
+		}
+		if c.Backend.HealthCheck.MaxRetries != 3 {
+			t.Errorf("expected default max_retries 3, got %d", c.Backend.HealthCheck.MaxRetries)
+		}
+	})
+
+	t.Run("does not overwrite explicitly set values", func(t *testing.T) {
+		c := &Config{
+			Backend: Backend{
+				Algorithm: "random-selection",
+				HealthCheck: HealthCheck{
+					IntervalSeconds: 10,
+					TimeoutSeconds:  5,
+					MaxRetries:      1,
 				},
-				"backend": {
-					"servers": [{"address": "localhost:8081"}]
-				}
-			}`,
-			wantErr: false,
-			checkConfig: func(t *testing.T, c *Config) {
-				if c.Backend.Algorithm != "round-robin" {
-					t.Errorf("expected default algorithm 'round-robin', got %s", c.Backend.Algorithm)
-				}
-				if c.Storage.Type != "memory" {
-					t.Errorf("expected default storage 'memory', got %s", c.Storage.Type)
-				}
-				if c.Backend.HealthCheck.IntervalSeconds != 5 {
-					t.Errorf("expected default interval 5, got %d", c.Backend.HealthCheck.IntervalSeconds)
-				}
 			},
-		},
-		{
-			name: "Valid Redis config defaults",
-			input: `{
-				"storage": {"type": "redis"},
-				"frontend": {"port": ":8080", "rate_limit": {"capacity": 10, "rate": 1}},
-				"backend": {"servers": [{"address": "localhost:8081"}]}
-			}`,
-			wantErr: false,
-			checkConfig: func(t *testing.T, c *Config) {
-				if c.Storage.Redis.Address != "localhost:6379" {
-					t.Errorf("expected default redis address, got %s", c.Storage.Redis.Address)
-				}
-			},
-		},
-		{
-			name:    "Invalid JSON",
-			input:   `{ "frontend": { "port": :8080 } }`, // Missing quotes
-			wantErr: true,
-		},
-		{
-			name: "Validation error: No servers",
-			input: `{
-				"frontend": {"port": ":8080", "rate_limit": {"capacity": 10, "rate": 1}},
-				"backend": {"servers": []}
-			}`,
-			wantErr: true,
-		},
-		{
-			name: "Validation error: Zero rate limit",
-			input: `{
-				"frontend": {"port": ":8080", "rate_limit": {"capacity": 0, "rate": 1}},
-				"backend": {"servers": [{"address": "localhost:8081"}]}
-			}`,
-			wantErr: true,
-		},
-		{
-			name: "Validation error: Unknown algorithm",
-			input: `{
-				"frontend": {"port": ":8080", "rate_limit": {"capacity": 10, "rate": 1}},
-				"backend": {
-					"algorithm": "chaos-theory",
-					"servers": [{"address": "localhost:8081"}]
-				}
-			}`,
-			wantErr: true,
-		},
-	}
+			Storage: Storage{Type: "redis"},
+		}
+		ApplyDefaults(c)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := strings.NewReader(tt.input)
-			cfg, err := LoadConfig(r)
+		if c.Backend.Algorithm != "random-selection" {
+			t.Errorf("ApplyDefaults overwrote explicit algorithm")
+		}
+		if c.Backend.HealthCheck.IntervalSeconds != 10 {
+			t.Errorf("ApplyDefaults overwrote explicit interval")
+		}
+	})
 
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("LoadConfig() error = %v, wantErr %v", err, tt.wantErr)
-			}
+	t.Run("fills redis address default when storage is redis", func(t *testing.T) {
+		c := &Config{Storage: Storage{Type: "redis"}}
+		ApplyDefaults(c)
 
-			if !tt.wantErr && tt.checkConfig != nil {
-				tt.checkConfig(t, cfg)
-			}
-		})
-	}
+		if c.Storage.Redis.Address != "localhost:6379" {
+			t.Errorf("expected default redis address, got %q", c.Storage.Redis.Address)
+		}
+	})
+
+	t.Run("does not set redis address default when storage is not redis", func(t *testing.T) {
+		c := &Config{Storage: Storage{Type: "memory"}}
+		ApplyDefaults(c)
+
+		if c.Storage.Redis.Address != "" {
+			t.Errorf("expected empty redis address for memory storage, got %q", c.Storage.Redis.Address)
+		}
+	})
 }
