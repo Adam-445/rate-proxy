@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Adam-445/configr"
 	"github.com/Adam-445/rate-proxy/internal/balancer"
 	"github.com/Adam-445/rate-proxy/internal/config"
 	"github.com/Adam-445/rate-proxy/internal/limiter"
@@ -23,18 +24,16 @@ func main() {
 	configPath := flag.String("config", "config.json", "path to config file")
 	flag.Parse()
 
-	f, err := os.Open(*configPath)
-	if err != nil {
-		logger.Error("failed to open config", "error", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			logger.Warn("error closing config file", "error", err)
-		}
-	}()
+	// l is declared before the loader so the OnChange closure can capture it.
+	// The closure guards against the nil case (first poll fires before l is assigned),
+	// though in practice the watcher won't fire withing the 2 second poll window.
+	var l *limiter.Limiter
 
-	cfg, err := config.LoadConfig(f)
+	cfg, err := configr.Load(
+		*configPath,
+		configr.WithDefaults(config.ApplyDefaults),
+		configr.WithValidate(config.Validate),
+	)
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
@@ -59,7 +58,11 @@ func main() {
 		logger.Error("Unrecognized storage type", "type", cfg.Storage.Type)
 		os.Exit(1)
 	}
-	l := limiter.NewLimiter(store, float64(cfg.Frontend.RateLimit.Capacity), float64(cfg.Frontend.RateLimit.Rate))
+	l = limiter.NewLimiter(
+		store,
+		float64(cfg.Frontend.RateLimit.Capacity),
+		float64(cfg.Frontend.RateLimit.Rate),
+	)
 
 	addrs := make([]string, len(cfg.Backend.Servers))
 	for i, s := range cfg.Backend.Servers {

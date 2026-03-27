@@ -1,5 +1,4 @@
-// Package limiter implements a token bucket rate limiter,
-// supports both in-memory and Redis-backed storage
+// Package limiter implements a token bucket rate limiter.
 package limiter
 
 import (
