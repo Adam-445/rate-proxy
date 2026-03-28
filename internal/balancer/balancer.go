@@ -1,5 +1,4 @@
 // Package balancer implements load balancing across backend servers
-// includes proxy caching and health checks
 package balancer
 
 import (
@@ -8,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -30,37 +30,65 @@ func (ba *backend) isUp() bool {
 type Balancer struct {
 	backends  []*backend
 	algorithm Algorithm
+	hc        HealthCheckConfig
+	logger    *slog.Logger
 
-	hc     HealthCheckConfig
-	logger *slog.Logger
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
-// TODO: Make health checks injectable or configurable
-//   - This makes tests guaranteed and not coincidence.
-//     Because healthchecks spin up as soon as the balancer is created
-func (b *Balancer) runHealthcheck(backend *backend) {
+// Stop signals all background healthchecks goroutines to exit.
+// It is safe to call multiple times from any goroutine. After Stop returns, no further healthchecks
+// state changes will occur.
+func (b *Balancer) Stop() {
+	b.stopOnce.Do(func() { close(b.stop) })
+}
+
+// runHealthcheck runs in its own goroutine for each backend. It probes the backend on the configured interval
+// and marks it up or down accordingly.
+//
+// TODO: Make health checks injectable so tests don't rely on timing coincidence
+func (b *Balancer) runHealthcheck(be *backend) {
+	maxRetrySleep := 10.0
+
 	client := http.Client{
 		Timeout: time.Duration(b.hc.TimeoutSeconds) * time.Second,
 	}
 
-	maxRetrySleep := 10.0
-
 	for {
-		retries := 0
-		for retries <= b.hc.MaxRetries {
-			_, err := client.Head(backend.address)
-			if err != nil {
-				backend.up.Store(false)
-				b.logger.Warn("Server is down", "address", backend.address, "retries", retries)
-				sleep := math.Min(math.Exp(float64(retries)/2), maxRetrySleep)
-				time.Sleep(time.Duration(sleep) * time.Second)
-				retries++
-			} else {
-				backend.up.Store(true)
-				break
+		// Retry loop: on failure, back off exponentially up to maxRetrySleep seconds
+		for retries := 0; retries <= b.hc.MaxRetries; retries++ {
+			// Check for stop before each probe attempt
+			select {
+			case <-b.stop:
+				return
+			default:
+			}
+
+			_, err := client.Head(be.address)
+			if err == nil {
+				be.up.Store(true)
+				break // healthy, skip remaining entries
+			}
+
+			be.up.Store(false)
+			b.logger.Warn("backend unreachable", "address", be.address, "attempt", retries+1)
+
+			sleep := time.Duration(math.Min(math.Exp(float64(retries)/2), maxRetrySleep) * float64(time.Second))
+
+			select {
+			case <-b.stop:
+				return
+			case <-time.After(sleep):
 			}
 		}
-		time.Sleep(time.Duration(b.hc.IntervalSeconds) * time.Second)
+
+		// Wait for next check, but bail out immediately on Stop
+		select {
+		case <-b.stop:
+			return
+		case <-time.After(time.Duration(b.hc.IntervalSeconds) * time.Second):
+		}
 	}
 }
 
@@ -74,9 +102,7 @@ func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, 
 		}
 		currBackend := &backend{address: addr}
 
-		// Start optimistic, assume backends are up until proven otherwise
-		// (if you configured a backend it's probably up :D )
-		currBackend.up.Store(true)
+		currBackend.up.Store(true) // optimistic: assume up until the first healthcheck says otherwise
 		backends[i] = currBackend
 		go b.runHealthcheck(currBackend)
 	}
