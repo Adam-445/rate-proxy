@@ -93,7 +93,12 @@ func (b *Balancer) runHealthcheck(be *backend) {
 }
 
 func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, logger *slog.Logger) *Balancer {
-	b := &Balancer{hc: hc, algorithm: algorithm, logger: logger}
+	b := &Balancer{
+		hc:        hc,
+		algorithm: algorithm,
+		logger:    logger,
+		stop:      make(chan struct{}),
+	}
 	backends := make([]*backend, len(addresses))
 	for i, addr := range addresses {
 		// Add scheme if missing

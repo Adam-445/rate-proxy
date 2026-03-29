@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,28 +19,110 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// app owns every long lived component of the proxy.
+type app struct {
+	config   *config.Config
+	limiter  *limiter.Limiter
+	balancer *balancer.Balancer
+	server   *http.Server
+	logger   *slog.Logger
+}
+
+// newApp builds every component from the config file at configPath. If any step fails the returned and no
+// resources are left open
+func newApp(configPath string, logger *slog.Logger) (*app, error) {
+	a := &app{logger: logger}
+
+	var err error
+	a.config, err = configr.Load(
+		configPath,
+		configr.WithDefaults(config.ApplyDefaults),
+		configr.WithValidate(config.Validate),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("loading config: %w", err)
+	}
+
+	store, err := buildStore(a.config)
+	if err != nil {
+		return nil, err
+	}
+
+	a.limiter = limiter.NewLimiter(
+		store,
+		float64(a.config.Frontend.RateLimit.Capacity),
+		float64(a.config.Frontend.RateLimit.Rate),
+	)
+
+	a.balancer = buildBalancer(a.config, logger)
+
+	a.server = &http.Server{
+		Addr:    a.config.Frontend.Port,
+		Handler: buildHandler(a.balancer, a.limiter, logger),
+	}
+
+	return a, nil
+}
+
+// run starts the HTTP server and blocks until ctx is cancelled (eg. on SIGNINT/SIGTERM) or the server
+// exists with an error. It always attempts a graceful shutdown before returning.
+func (a *app) run(ctx context.Context) error {
+	errChan := make(chan error, 1)
+	go func() {
+		a.logger.Info("proxy listening", "addr", a.server.Addr)
+		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+
+	select {
+	case <-ctx.Done():
+		a.logger.Info("signal recieved, shutting down")
+	case err := <-errChan:
+		return err
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := a.server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("graceful shutdown: %w", err)
+	}
+	a.logger.Info("shut down cleanly")
+	return nil
+}
+
+// stop releases background resources. Safe to all after run() has returned
+func (a *app) stop() {
+	a.balancer.Stop()
+}
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	configPath := flag.String("config", "config.json", "path to config file")
 	flag.Parse()
 
-	// l is declared before the loader so the OnChange closure can capture it.
-	// The closure guards against the nil case (first poll fires before l is assigned),
-	// though in practice the watcher won't fire withing the 2 second poll window.
-	var l *limiter.Limiter
-
-	cfg, err := configr.Load(
-		*configPath,
-		configr.WithDefaults(config.ApplyDefaults),
-		configr.WithValidate(config.Validate),
-	)
+	a, err := newApp(*configPath, logger)
 	if err != nil {
-		logger.Error("failed to load config", "error", err)
+		logger.Error("startup failed", "error", err)
 		os.Exit(1)
 	}
+	defer a.stop()
 
-	var store limiter.BucketStore
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := a.run(ctx); err != nil {
+		logger.Error("server error", "error", err)
+		os.Exit(1)
+	}
+}
+
+// Helpers
+
+func buildStore(cfg *config.Config) (limiter.BucketStore, error) {
 	switch cfg.Storage.Type {
 	case "redis":
 		client := redis.NewClient(&redis.Options{
@@ -48,31 +131,28 @@ func main() {
 			DB:       cfg.Storage.Redis.DB,
 		})
 		if _, err := client.Ping(context.Background()).Result(); err != nil {
-			logger.Error("failed to connect to redis", "error", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("connecting to redis at %s: %w", cfg.Storage.Redis.Address, err)
 		}
-		store = limiter.NewRedisBucketStore(client)
+		return limiter.NewRedisBucketStore(client), nil
 	case "memory":
-		store = limiter.NewInMemoryBucketStore()
+		return limiter.NewInMemoryBucketStore(), nil
 	default:
-		logger.Error("Unrecognized storage type", "type", cfg.Storage.Type)
-		os.Exit(1)
+		return nil, fmt.Errorf("unrecognized storage type %q", cfg.Storage.Type)
 	}
-	l = limiter.NewLimiter(
-		store,
-		float64(cfg.Frontend.RateLimit.Capacity),
-		float64(cfg.Frontend.RateLimit.Rate),
-	)
+}
 
+func buildBalancer(cfg *config.Config, logger *slog.Logger) *balancer.Balancer {
 	addrs := make([]string, len(cfg.Backend.Servers))
 	for i, s := range cfg.Backend.Servers {
 		addrs[i] = s.Address
 	}
+
 	hc := balancer.HealthCheckConfig{
 		IntervalSeconds: cfg.Backend.HealthCheck.IntervalSeconds,
 		TimeoutSeconds:  cfg.Backend.HealthCheck.TimeoutSeconds,
 		MaxRetries:      cfg.Backend.HealthCheck.MaxRetries,
 	}
+
 	var algorithm balancer.Algorithm
 	switch cfg.Backend.Algorithm {
 	case "round-robin":
@@ -80,51 +160,20 @@ func main() {
 	case "random-selection":
 		algorithm = &balancer.RandomSelection{}
 	default:
-		logger.Error("Unrecognized balancing algorithm", "algorithm", cfg.Backend.Algorithm)
-		os.Exit(1)
-
+		// Validate() already rejects unknown algorithms, so this branch is
+		// unreachable in practice. Panic is intentional.
+		panic(
+			fmt.Sprintf(
+				"unrecognized algorithm %q (should have been caught by config.Validate)",
+				cfg.Backend.Algorithm,
+			),
+		)
 	}
-	b := balancer.NewBalancer(addrs, hc, algorithm, logger)
 
-	proxy := NewProxyHandler(b, logger)
-	handler := LoggingMiddleware(logger, RateLimitMiddleware(l, proxy, logger))
-
-	server := &http.Server{
-		Addr:    cfg.Frontend.Port,
-		Handler: handler,
-	}
-	errChan := make(chan error, 1)
-	logger.Info("proxy listening", "addr", cfg.Frontend.Port)
-	go startServer(server, errChan)
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// wait for either a signal or a server error
-	select {
-	case sig := <-sigChan:
-		logger.Info("Received signal. Shutting down.", "signal", sig)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		// Shutdown closes the listener and waits for in-flight requests
-		if err := server.Shutdown(ctx); err != nil {
-			logger.Warn("Graceful shutdown failed", "error", err)
-		} else {
-			logger.Info("Server shut down.")
-		}
-	case err := <-errChan:
-		if err != nil {
-			logger.Error("Server error", "error", err)
-		}
-	}
+	return balancer.NewBalancer(addrs, hc, algorithm, logger)
 }
 
-func startServer(server *http.Server, errorChannel chan error) {
-	err := server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		errorChannel <- err
-	}
-	close(errorChannel)
+func buildHandler(b *balancer.Balancer, l *limiter.Limiter, logger *slog.Logger) http.Handler {
+	proxy := NewProxyHandler(b, logger)
+	return LoggingMiddleware(logger, RateLimitMiddleware(l, proxy, logger))
 }
