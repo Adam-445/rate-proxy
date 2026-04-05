@@ -1,10 +1,10 @@
-// Package config handles loading and parsing of the application configuration file
+// Package config defines the shape of the rate-proxy configuration file.
+//
+// It deliberately contains no io. Loading is handled by configr.
 package config
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 )
 
 type Config struct {
@@ -30,9 +30,10 @@ type Backend struct {
 }
 
 type HealthCheck struct {
-	IntervalSeconds int `json:"interval_seconds"`
-	TimeoutSeconds  int `json:"timeout_seconds"`
-	MaxRetries      int `json:"max_retries"`
+	Path            string `json:"path"`
+	IntervalSeconds int    `json:"interval_seconds"`
+	TimeoutSeconds  int    `json:"timeout_seconds"`
+	MaxRetries      int    `json:"max_retries"`
 }
 
 type Server struct {
@@ -50,29 +51,17 @@ type Redis struct {
 	DB       int    `json:"db"`
 }
 
-func LoadConfig(r io.Reader) (config *Config, err error) {
-	config = &Config{}
-	decoder := json.NewDecoder(r)
-
-	err = decoder.Decode(&config)
-	if err != nil {
-		return nil, err
-	}
-
-	config.applyDefaults()
-	if err := config.validate(); err != nil {
-		return nil, err
-	}
-
-	return config, nil
-}
-
-func (c *Config) applyDefaults() {
+// ApplyDefaults fills in zero-value fields with sensible defaults.
+// It is intended to be passed to configr.WithDefaults
+func ApplyDefaults(c *Config) {
 	if c.Backend.Algorithm == "" {
 		c.Backend.Algorithm = "round-robin"
 	}
 	if c.Storage.Type == "" {
 		c.Storage.Type = "memory"
+	}
+	if c.Backend.HealthCheck.Path == "" {
+		c.Backend.HealthCheck.Path = "/healthz"
 	}
 	if c.Storage.Type == "redis" {
 		if c.Storage.Redis.Address == "" {
@@ -90,7 +79,9 @@ func (c *Config) applyDefaults() {
 	}
 }
 
-func (c *Config) validate() error {
+// Validate rejects configs that would cause errors / break the server.
+// It is intended to be passed to configr.WithValidate
+func Validate(c Config) error {
 	if len(c.Backend.Servers) == 0 {
 		return fmt.Errorf("backend.servers cannot be empty")
 	}

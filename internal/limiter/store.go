@@ -48,11 +48,14 @@ type bucket struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// BucketStore is the persistence layer for the token buckets
 type BucketStore interface {
 	// Consume attempts to take 1 token. It returns true if allowed, false if rate limited
 	Consume(ctx context.Context, key string, capacity float64, rate float64, now time.Time) (bool, error)
 }
 
+// RedisBucketStore persists buckets in Redis. Safe for use across multiple proxy instances
+// (because the refill and consume logic runs in a lua script, which redis executes single-threaded)
 type RedisBucketStore struct {
 	client *redis.Client
 }
@@ -61,7 +64,13 @@ func NewRedisBucketStore(client *redis.Client) *RedisBucketStore {
 	return &RedisBucketStore{client: client}
 }
 
-func (r *RedisBucketStore) Consume(ctx context.Context, key string, capacity float64, rate float64, now time.Time) (bool, error) {
+func (r *RedisBucketStore) Consume(
+	ctx context.Context,
+	key string,
+	capacity float64,
+	rate float64,
+	now time.Time,
+) (bool, error) {
 	// Convert Go time to float seconds so Lua can do the math
 	nowFloat := float64(now.UnixNano()) / 1e9
 	ttlSeconds := 3600 // 1 hour TTL to clean up inactive clients
@@ -75,6 +84,9 @@ func (r *RedisBucketStore) Consume(ctx context.Context, key string, capacity flo
 	return res.(int64) == 1, nil
 }
 
+// InMemoryBucketStore persists buckets in a plain go map behind a mutex.
+// Intended for single-instance deployments. Use RedisBucketStore for horizontally
+// scaled proxies.
 type InMemoryBucketStore struct {
 	data map[string]*bucket
 	mu   sync.Mutex
@@ -84,7 +96,13 @@ func NewInMemoryBucketStore() *InMemoryBucketStore {
 	return &InMemoryBucketStore{data: make(map[string]*bucket)}
 }
 
-func (m *InMemoryBucketStore) Consume(ctx context.Context, key string, capacity float64, rate float64, now time.Time) (bool, error) {
+func (m *InMemoryBucketStore) Consume(
+	ctx context.Context,
+	key string,
+	capacity float64,
+	rate float64,
+	now time.Time,
+) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -98,16 +116,16 @@ func (m *InMemoryBucketStore) Consume(ctx context.Context, key string, capacity 
 		m.data[key] = b
 	}
 
-	// Refill
+	// Refill: add tokens proportional to elapsed time, capped at capacity
 	elapsed := now.Sub(b.Timestamp).Seconds()
 	newTokens := math.Min(capacity, b.Tokens+(elapsed*rate))
 
 	// Consume
-	if b.Tokens >= 1 {
-		b.Tokens = newTokens - 1
-		b.Timestamp = now
-		return true, nil
+	if newTokens < 1 {
+		return false, nil
 	}
 
-	return false, nil
+	b.Tokens = newTokens - 1
+	b.Timestamp = now
+	return true, nil
 }

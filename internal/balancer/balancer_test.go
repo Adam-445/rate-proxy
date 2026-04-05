@@ -1,10 +1,12 @@
 package balancer
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"strconv"
 	"testing"
+	"time"
 )
 
 type fakeAlgorithm struct {
@@ -13,6 +15,16 @@ type fakeAlgorithm struct {
 
 func (f *fakeAlgorithm) Next(n int) int {
 	return f.idx
+}
+
+// newTestBalancer creates a Balancer for testing and registers Stop() as a cleanup function
+// so healthcheck goroutines don't leak between tests
+func newTestBalancer(t *testing.T, addrs []string, alg Algorithm) *Balancer {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := NewBalancer(addrs, HealthCheckConfig{}, alg, &blockingProber{}, logger)
+	t.Cleanup(b.Stop)
+	return b
 }
 
 func TestDownBackend(t *testing.T) {
@@ -33,7 +45,7 @@ func TestDownBackend(t *testing.T) {
 			expectedErr:     false,
 		},
 		{
-			name:            "first backend down",
+			name:            "first backend down, skips to next",
 			startingIdx:     0,
 			downBackendsIdx: []int{0},
 			backendCount:    3,
@@ -41,7 +53,7 @@ func TestDownBackend(t *testing.T) {
 			expectedErr:     false,
 		},
 		{
-			name:            "multiple backends down skip to last",
+			name:            "multiple backends down, skip to last",
 			startingIdx:     0,
 			downBackendsIdx: []int{0, 1},
 			backendCount:    3,
@@ -57,7 +69,7 @@ func TestDownBackend(t *testing.T) {
 			expectedErr:     false,
 		},
 		{
-			name:            "all backends down",
+			name:            "all backends down returns error",
 			startingIdx:     0,
 			downBackendsIdx: []int{0, 1, 2, 3},
 			backendCount:    4,
@@ -68,19 +80,18 @@ func TestDownBackend(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			alg := &fakeAlgorithm{idx: tt.startingIdx}
 			addrs := make([]string, tt.backendCount)
 			for i := range tt.backendCount {
 				addrs[i] = "http://" + strconv.Itoa(i)
 			}
-			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			balancer := NewBalancer(addrs, HealthCheckConfig{}, alg, logger)
+
+			b := newTestBalancer(t, addrs, &fakeAlgorithm{tt.startingIdx})
 
 			for _, idx := range tt.downBackendsIdx {
-				balancer.backends[idx].up.Store(false)
+				b.backends[idx].up.Store(false)
 			}
 
-			actual, err := balancer.GetNextBackend()
+			got, err := b.GetNextBackend()
 			if (err != nil) != tt.expectedErr {
 				t.Fatalf("GetNextBackend() error = %v, expectErr %v", err, tt.expectedErr)
 			}
@@ -90,9 +101,30 @@ func TestDownBackend(t *testing.T) {
 				return
 			}
 
-			if actual != tt.expected {
-				t.Errorf("got %s, want %s", actual, tt.expected)
+			if got != tt.expected {
+				t.Errorf("got %s, want %s", got, tt.expected)
 			}
 		})
+	}
+}
+
+// TestHealthCheck_MarksBackendDown verifies that a backend is marked down when
+// every probe attempt fails.
+func TestHealthCheck_MarksBackendDown(t *testing.T) {
+	prober := &fakeProber{}
+	prober.setErr(errors.New("connection refused"))
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := NewBalancer(
+		[]string{"http://backend-0"},
+		HealthCheckConfig{MaxRetries: 0}, // fail after first probe, loop immediately
+		&fakeAlgorithm{},
+		prober,
+		logger,
+	)
+	t.Cleanup(b.Stop)
+
+	if !waitFor(func() bool { return !b.backends[0].isUp() }, 500*time.Millisecond) {
+		t.Error("expected backend to be marked down after probe failure")
 	}
 }
