@@ -28,8 +28,8 @@ type app struct {
 	logger   *slog.Logger
 }
 
-// newApp builds every component from the config file at configPath. If any step fails the returned and no
-// resources are left open
+// newApp builds every component from the config file at configPath. If any step fails the error is returned
+// and no resources are left open
 func newApp(configPath string, logger *slog.Logger) (*app, error) {
 	a := &app{logger: logger}
 
@@ -65,7 +65,7 @@ func newApp(configPath string, logger *slog.Logger) (*app, error) {
 }
 
 // run starts the HTTP server and blocks until ctx is cancelled (eg. on SIGNINT/SIGTERM) or the server
-// exists with an error. It always attempts a graceful shutdown before returning.
+// exits with an error. It always attempts a graceful shutdown before returning.
 func (a *app) run(ctx context.Context) error {
 	errChan := make(chan error, 1)
 	go func() {
@@ -78,7 +78,7 @@ func (a *app) run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		a.logger.Info("signal recieved, shutting down")
+		a.logger.Info("signal received, shutting down")
 	case err := <-errChan:
 		return err
 	}
@@ -93,7 +93,7 @@ func (a *app) run(ctx context.Context) error {
 	return nil
 }
 
-// stop releases background resources. Safe to all after run() has returned
+// stop releases background resources. Safe to call after run() has returned
 func (a *app) stop() {
 	a.balancer.Stop()
 }

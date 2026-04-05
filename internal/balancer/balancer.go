@@ -17,7 +17,7 @@ import (
 // holds what the balancer loop needs
 type HealthCheckConfig struct {
 	IntervalSeconds int // how long to wait between full probe cycles
-	MaxRetries      int // how many consecutive failures before marking a backed down
+	MaxRetries      int // how many consecutive failures before marking a backend down
 }
 
 type backend struct {

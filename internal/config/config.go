@@ -1,6 +1,6 @@
 // Package config defines the shape of the rate-proxy configuration file.
 //
-// It deliberately contains no io. Loading is handeled by configr.
+// It deliberately contains no io. Loading is handled by configr.
 package config
 
 import (

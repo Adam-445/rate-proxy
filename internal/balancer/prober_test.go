@@ -21,8 +21,8 @@ func (p *blockingProber) Probe(ctx context.Context, _ string) error {
 	return ctx.Err()
 }
 
-// fakeProber returns a configurable error on every call and counts how many time it
-// has been called. Used in healthckeck behavior tests
+// fakeProber returns a configurable error on every call and counts how many times it
+// has been called. Used in healthcheck behavior tests
 type fakeProber struct {
 	mu         sync.Mutex
 	err        error
