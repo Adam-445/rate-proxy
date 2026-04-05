@@ -30,9 +30,10 @@ type Backend struct {
 }
 
 type HealthCheck struct {
-	IntervalSeconds int `json:"interval_seconds"`
-	TimeoutSeconds  int `json:"timeout_seconds"`
-	MaxRetries      int `json:"max_retries"`
+	Path            string `json:"path"`
+	IntervalSeconds int    `json:"interval_seconds"`
+	TimeoutSeconds  int    `json:"timeout_seconds"`
+	MaxRetries      int    `json:"max_retries"`
 }
 
 type Server struct {
@@ -58,6 +59,9 @@ func ApplyDefaults(c *Config) {
 	}
 	if c.Storage.Type == "" {
 		c.Storage.Type = "memory"
+	}
+	if c.Backend.HealthCheck.Path == "" {
+		c.Backend.HealthCheck.Path = "/healthz"
 	}
 	if c.Storage.Type == "redis" {
 		if c.Storage.Redis.Address == "" {

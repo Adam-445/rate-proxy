@@ -71,3 +71,80 @@ func TestApplyDefaults(t *testing.T) {
 		}
 	})
 }
+
+// TestValidate verifies that valid configs pass and that each invalid
+// condition is caught individually
+func TestValidate(t *testing.T) {
+	// base is a minimal, valid config used as the starting point
+	base := Config{
+		Frontend: Frontend{Port: ":8080", RateLimit: RateLimit{Capacity: 10, Rate: 1}},
+		Backend: Backend{
+			Algorithm: "round-robin",
+			Servers:   []Server{{Address: "localhost:8081"}},
+		},
+		Storage: Storage{Type: "memory"},
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr bool
+	}{
+		{
+			name:    "valid config passes",
+			mutate:  func(c *Config) {},
+			wantErr: false,
+		},
+		{
+			name:    "no servers",
+			mutate:  func(c *Config) { c.Backend.Servers = nil },
+			wantErr: true,
+		},
+		{
+			name:    "server with empty address",
+			mutate:  func(c *Config) { c.Backend.Servers = []Server{{Address: ""}} },
+			wantErr: true,
+		},
+		{
+			name:    "empty port",
+			mutate:  func(c *Config) { c.Frontend.Port = "" },
+			wantErr: true,
+		},
+		{
+			name:    "zero capacity",
+			mutate:  func(c *Config) { c.Frontend.RateLimit.Capacity = 0 },
+			wantErr: true,
+		},
+		{
+			name:    "negative capacity",
+			mutate:  func(c *Config) { c.Frontend.RateLimit.Capacity = -1 },
+			wantErr: true,
+		},
+		{
+			name:    "zero rate",
+			mutate:  func(c *Config) { c.Frontend.RateLimit.Rate = 0 },
+			wantErr: true,
+		},
+		{
+			name:    "unknown algorithm",
+			mutate:  func(c *Config) { c.Backend.Algorithm = "chaos-theory" },
+			wantErr: true,
+		},
+		{
+			name:    "unknown storage type",
+			mutate:  func(c *Config) { c.Storage.Type = "cassandra" },
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := base // copy so mutations don't bleed between subtests
+			tt.mutate(&c)
+			err := Validate(c)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

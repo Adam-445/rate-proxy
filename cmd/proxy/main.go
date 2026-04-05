@@ -149,7 +149,6 @@ func buildBalancer(cfg *config.Config, logger *slog.Logger) *balancer.Balancer {
 
 	hc := balancer.HealthCheckConfig{
 		IntervalSeconds: cfg.Backend.HealthCheck.IntervalSeconds,
-		TimeoutSeconds:  cfg.Backend.HealthCheck.TimeoutSeconds,
 		MaxRetries:      cfg.Backend.HealthCheck.MaxRetries,
 	}
 
@@ -170,7 +169,12 @@ func buildBalancer(cfg *config.Config, logger *slog.Logger) *balancer.Balancer {
 		)
 	}
 
-	return balancer.NewBalancer(addrs, hc, algorithm, logger)
+	prober := balancer.NewHTTPProber(
+		cfg.Backend.HealthCheck.Path,
+		time.Duration(cfg.Backend.HealthCheck.TimeoutSeconds)*time.Second,
+	)
+
+	return balancer.NewBalancer(addrs, hc, algorithm, prober, logger)
 }
 
 func buildHandler(b *balancer.Balancer, l *limiter.Limiter, logger *slog.Logger) http.Handler {

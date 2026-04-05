@@ -2,20 +2,22 @@
 package balancer
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
+// HealthCheckConfig controls the cadence and resilience of the health probes.
+// The probe mechanism itself is owned by the Prober passed to NewBalancer, this struct only
+// holds what the balancer loop needs
 type HealthCheckConfig struct {
-	IntervalSeconds int
-	TimeoutSeconds  int
-	MaxRetries      int
+	IntervalSeconds int // how long to wait between full probe cycles
+	MaxRetries      int // how many consecutive failures before marking a backed down
 }
 
 type backend struct {
@@ -27,13 +29,17 @@ func (ba *backend) isUp() bool {
 	return ba.up.Load()
 }
 
+// Balancer routes requests across a pool of backends and keeps their health status
+// up to date via background goroutines
 type Balancer struct {
 	backends  []*backend
 	algorithm Algorithm
 	hc        HealthCheckConfig
+	prober    Prober
 	logger    *slog.Logger
 
-	stop     chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
 	stopOnce sync.Once
 }
 
@@ -41,64 +47,74 @@ type Balancer struct {
 // It is safe to call multiple times from any goroutine. After Stop returns, no further healthchecks
 // state changes will occur.
 func (b *Balancer) Stop() {
-	b.stopOnce.Do(func() { close(b.stop) })
+	b.stopOnce.Do(b.cancel)
 }
 
-// runHealthcheck runs in its own goroutine for each backend. It probes the backend on the configured interval
-// and marks it up or down accordingly.
-//
-// TODO: Make health checks injectable so tests don't rely on timing coincidence
+// runHealthcheck runs in its own goroutine per backend. On each cycle it calls b.prober.Probe() up to
+// MaxRetries+1 times with exponential backoff. A successful probe marks the backend up and waits IntervalSeconds
+// before the next cycle. All sleeps respond to stop() immediately via b.ctx
 func (b *Balancer) runHealthcheck(be *backend) {
 	maxRetrySleep := 10.0
 
-	client := http.Client{
-		Timeout: time.Duration(b.hc.TimeoutSeconds) * time.Second,
-	}
-
 	for {
-		// Retry loop: on failure, back off exponentially up to maxRetrySleep seconds
-		for retries := 0; retries <= b.hc.MaxRetries; retries++ {
-			// Check for stop before each probe attempt
+		// Retry loop: probe up to MaxRetries+1 times before giving up.
+		for attempt := 0; attempt <= b.hc.MaxRetries; attempt++ {
+			// Bail out before each probe so Stop() is never blocked waiting
+			// for a probe that will be discarded anyway
 			select {
-			case <-b.stop:
+			case <-b.ctx.Done():
 				return
 			default:
 			}
 
-			_, err := client.Head(be.address)
+			err := b.prober.Probe(b.ctx, be.address)
 			if err == nil {
 				be.up.Store(true)
 				break // healthy, skip remaining entries
 			}
 
 			be.up.Store(false)
-			b.logger.Warn("backend unreachable", "address", be.address, "attempt", retries+1)
+			b.logger.Warn("backend unreachable", "address", be.address, "attempt", attempt+1, "error", err)
 
-			sleep := time.Duration(math.Min(math.Exp(float64(retries)/2), maxRetrySleep) * float64(time.Second))
+			// Exponential backoff between retries, capped at maxRetrySleep
+			sleep := time.Duration(math.Min(math.Exp(float64(attempt)/2), maxRetrySleep) * float64(time.Second))
 
 			select {
-			case <-b.stop:
+			case <-b.ctx.Done():
 				return
 			case <-time.After(sleep):
 			}
 		}
 
-		// Wait for next check, but bail out immediately on Stop
+		// Wait for next scheduled probe cycle
 		select {
-		case <-b.stop:
+		case <-b.ctx.Done():
 			return
 		case <-time.After(time.Duration(b.hc.IntervalSeconds) * time.Second):
 		}
 	}
 }
 
-func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, logger *slog.Logger) *Balancer {
+// NewBalancer creates a Balancer and immediately starts one healthcheck goroutine per address.
+// Call Stop() to release those goroutines.
+func NewBalancer(
+	addresses []string,
+	hc HealthCheckConfig,
+	algorithm Algorithm,
+	prober Prober,
+	logger *slog.Logger,
+) *Balancer {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	b := &Balancer{
 		hc:        hc,
 		algorithm: algorithm,
+		prober:    prober,
 		logger:    logger,
-		stop:      make(chan struct{}),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
+
 	backends := make([]*backend, len(addresses))
 	for i, addr := range addresses {
 		// Add scheme if missing
@@ -106,8 +122,7 @@ func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, 
 			addr = "http://" + addr
 		}
 		currBackend := &backend{address: addr}
-
-		currBackend.up.Store(true) // optimistic: assume up until the first healthcheck says otherwise
+		currBackend.up.Store(true) // optimistic: assume up until first probe says otherwise
 		backends[i] = currBackend
 		go b.runHealthcheck(currBackend)
 	}
@@ -115,6 +130,9 @@ func NewBalancer(addresses []string, hc HealthCheckConfig, algorithm Algorithm, 
 	return b
 }
 
+// GetNextBackend returns the address of the next healthy backend according to the configured
+// algorithm. It skips unhealthy backends by walking forward through the pool.
+// Returns an error if every backend is currently down.
 func (b *Balancer) GetNextBackend() (string, error) {
 	idx := b.algorithm.Next(len(b.backends))
 	for attempts := 0; attempts < len(b.backends); attempts++ {
