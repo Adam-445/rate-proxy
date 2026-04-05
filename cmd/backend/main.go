@@ -15,7 +15,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte("OK"))
 		if err != nil {
-			http.Error(w, "Error writing body", http.StatusInternalServerError)
+			return
 		}
 	})
 
