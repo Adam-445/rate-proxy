@@ -21,11 +21,12 @@ import (
 
 // app owns every long lived component of the proxy.
 type app struct {
-	config   *config.Config
-	limiter  *limiter.Limiter
-	balancer *balancer.Balancer
-	server   *http.Server
-	logger   *slog.Logger
+	config      *config.Config
+	limiter     *limiter.Limiter
+	balancer    *balancer.Balancer
+	server      *http.Server
+	logger      *slog.Logger
+	redisClient *redis.Client //	nil when storage type != "redis"
 }
 
 // newApp builds every component from the config file at configPath. If any step fails the error is returned
@@ -43,10 +44,11 @@ func newApp(configPath string, logger *slog.Logger) (*app, error) {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	store, err := buildStore(a.config)
+	store, redisClient, err := buildStore(a.config)
 	if err != nil {
 		return nil, err
 	}
+	a.redisClient = redisClient
 
 	a.limiter = limiter.NewLimiter(
 		store,
@@ -96,6 +98,11 @@ func (a *app) run(ctx context.Context) error {
 // stop releases background resources. Safe to call after run() has returned
 func (a *app) stop() {
 	a.balancer.Stop()
+	if a.redisClient != nil {
+		if err := a.redisClient.Close(); err != nil {
+			a.logger.Warn("error closing redis client", "error", err)
+		}
+	}
 }
 
 func main() {
@@ -122,7 +129,7 @@ func main() {
 
 // Helpers
 
-func buildStore(cfg *config.Config) (limiter.BucketStore, error) {
+func buildStore(cfg *config.Config) (limiter.BucketStore, *redis.Client, error) {
 	switch cfg.Storage.Type {
 	case "redis":
 		client := redis.NewClient(&redis.Options{
@@ -130,14 +137,19 @@ func buildStore(cfg *config.Config) (limiter.BucketStore, error) {
 			Password: cfg.Storage.Redis.Password,
 			DB:       cfg.Storage.Redis.DB,
 		})
-		if _, err := client.Ping(context.Background()).Result(); err != nil {
-			return nil, fmt.Errorf("connecting to redis at %s: %w", cfg.Storage.Redis.Address, err)
+
+		pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if _, err := client.Ping(pingCtx).Result(); err != nil {
+			_ = client.Close() // dont leak the connection pool on failure
+			return nil, nil, fmt.Errorf("connecting to redis at %s: %w", cfg.Storage.Redis.Address, err)
 		}
-		return limiter.NewRedisBucketStore(client), nil
+		return limiter.NewRedisBucketStore(client), client, nil
 	case "memory":
-		return limiter.NewInMemoryBucketStore(), nil
+		return limiter.NewInMemoryBucketStore(), nil, nil
 	default:
-		return nil, fmt.Errorf("unrecognized storage type %q", cfg.Storage.Type)
+		return nil, nil, fmt.Errorf("unrecognized storage type %q", cfg.Storage.Type)
 	}
 }
 
