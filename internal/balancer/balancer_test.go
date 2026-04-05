@@ -1,10 +1,12 @@
 package balancer
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"strconv"
 	"testing"
+	"time"
 )
 
 type fakeAlgorithm struct {
@@ -20,7 +22,7 @@ func (f *fakeAlgorithm) Next(n int) int {
 func newTestBalancer(t *testing.T, addrs []string, alg Algorithm) *Balancer {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b := NewBalancer(addrs, HealthCheckConfig{}, alg, logger)
+	b := NewBalancer(addrs, HealthCheckConfig{}, alg, &blockingProber{}, logger)
 	t.Cleanup(b.Stop)
 	return b
 }
@@ -103,5 +105,26 @@ func TestDownBackend(t *testing.T) {
 				t.Errorf("got %s, want %s", got, tt.expected)
 			}
 		})
+	}
+}
+
+// TestHealthCheck_MarksBackendDown verifies that a backend is marked down when
+// every probe attempt fails.
+func TestHealthCheck_MarksBackendDown(t *testing.T) {
+	prober := &fakeProber{}
+	prober.setErr(errors.New("connection refused"))
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := NewBalancer(
+		[]string{"http://backend-0"},
+		HealthCheckConfig{MaxRetries: 0}, // fail after first probe, loop immediately
+		&fakeAlgorithm{},
+		prober,
+		logger,
+	)
+	t.Cleanup(b.Stop)
+
+	if !waitFor(func() bool { return !b.backends[0].isUp() }, 500*time.Millisecond) {
+		t.Error("expected backend to be marked down after probe failure")
 	}
 }
