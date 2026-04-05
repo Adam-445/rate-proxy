@@ -17,7 +17,7 @@ import (
 // holds what the balancer loop needs
 type HealthCheckConfig struct {
 	IntervalSeconds int // how long to wait between full probe cycles
-	MaxRetries      int // how many consecutive failures before marking a backend down
+	MaxRetries      int // how many extra probes to attempt immediately after a failure.
 }
 
 type backend struct {
@@ -41,19 +41,23 @@ type Balancer struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
-// Stop signals all background healthchecks goroutines to exit.
+// Stop signals all background healthchecks goroutines to exit and waits for them to do so.
 // It is safe to call multiple times from any goroutine. After Stop returns, no further healthchecks
 // state changes will occur.
 func (b *Balancer) Stop() {
 	b.stopOnce.Do(b.cancel)
+	b.wg.Wait()
 }
 
 // runHealthcheck runs in its own goroutine per backend. On each cycle it calls b.prober.Probe() up to
 // MaxRetries+1 times with exponential backoff. A successful probe marks the backend up and waits IntervalSeconds
 // before the next cycle. All sleeps respond to stop() immediately via b.ctx
 func (b *Balancer) runHealthcheck(be *backend) {
+	defer b.wg.Done()
+
 	maxRetrySleep := 10.0
 
 	for {
@@ -71,6 +75,11 @@ func (b *Balancer) runHealthcheck(be *backend) {
 			if err == nil {
 				be.up.Store(true)
 				break // healthy, skip remaining entries
+			}
+
+			// If the error is due to shutdown, return without mutating state or logging.
+			if b.ctx.Err() != nil {
+				return
 			}
 
 			be.up.Store(false)
@@ -124,6 +133,7 @@ func NewBalancer(
 		currBackend := &backend{address: addr}
 		currBackend.up.Store(true) // optimistic: assume up until first probe says otherwise
 		backends[i] = currBackend
+		b.wg.Add(1)
 		go b.runHealthcheck(currBackend)
 	}
 	b.backends = backends
