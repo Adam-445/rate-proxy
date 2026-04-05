@@ -15,6 +15,16 @@ func (f *fakeAlgorithm) Next(n int) int {
 	return f.idx
 }
 
+// newTestBalancer creates a Balancer for testing and registers Stop() as a cleanup function
+// so healthcheck goroutines don't leak between tests
+func newTestBalancer(t *testing.T, addrs []string, alg Algorithm) *Balancer {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := NewBalancer(addrs, HealthCheckConfig{}, alg, logger)
+	t.Cleanup(b.Stop)
+	return b
+}
+
 func TestDownBackend(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -33,7 +43,7 @@ func TestDownBackend(t *testing.T) {
 			expectedErr:     false,
 		},
 		{
-			name:            "first backend down",
+			name:            "first backend down, skips to next",
 			startingIdx:     0,
 			downBackendsIdx: []int{0},
 			backendCount:    3,
@@ -41,7 +51,7 @@ func TestDownBackend(t *testing.T) {
 			expectedErr:     false,
 		},
 		{
-			name:            "multiple backends down skip to last",
+			name:            "multiple backends down, skip to last",
 			startingIdx:     0,
 			downBackendsIdx: []int{0, 1},
 			backendCount:    3,
@@ -57,7 +67,7 @@ func TestDownBackend(t *testing.T) {
 			expectedErr:     false,
 		},
 		{
-			name:            "all backends down",
+			name:            "all backends down returns error",
 			startingIdx:     0,
 			downBackendsIdx: []int{0, 1, 2, 3},
 			backendCount:    4,
@@ -68,19 +78,18 @@ func TestDownBackend(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			alg := &fakeAlgorithm{idx: tt.startingIdx}
 			addrs := make([]string, tt.backendCount)
 			for i := range tt.backendCount {
 				addrs[i] = "http://" + strconv.Itoa(i)
 			}
-			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			balancer := NewBalancer(addrs, HealthCheckConfig{}, alg, logger)
+
+			b := newTestBalancer(t, addrs, &fakeAlgorithm{tt.startingIdx})
 
 			for _, idx := range tt.downBackendsIdx {
-				balancer.backends[idx].up.Store(false)
+				b.backends[idx].up.Store(false)
 			}
 
-			actual, err := balancer.GetNextBackend()
+			got, err := b.GetNextBackend()
 			if (err != nil) != tt.expectedErr {
 				t.Fatalf("GetNextBackend() error = %v, expectErr %v", err, tt.expectedErr)
 			}
@@ -90,8 +99,8 @@ func TestDownBackend(t *testing.T) {
 				return
 			}
 
-			if actual != tt.expected {
-				t.Errorf("got %s, want %s", actual, tt.expected)
+			if got != tt.expected {
+				t.Errorf("got %s, want %s", got, tt.expected)
 			}
 		})
 	}
